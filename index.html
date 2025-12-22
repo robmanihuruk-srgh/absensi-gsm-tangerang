@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Retreat GSM GKPS - Multi Session System</title>
+    <title>Retreat GSM GKPS - All In One System</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -16,7 +16,6 @@
         body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         .animate-fade-in { animation: fadeIn 0.3s ease-in; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        /* Custom Scrollbar for list */
         .scroller::-webkit-scrollbar { width: 4px; }
         .scroller::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
     </style>
@@ -57,7 +56,7 @@
 
         // --- KONFIGURASI SESI ACARA ---
         const SESSION_LIST = [
-            { id: 'registrasi_awal', label: 'Registrasi Awal (Check-in)', icon: 'user-check', color: 'blue' },
+            { id: 'registrasi_awal', label: 'Registrasi Awal', icon: 'user-check', color: 'blue' },
             { id: 'sesi_1', label: 'Sesi 1: Pembukaan', icon: 'book-open', color: 'indigo' },
             { id: 'sesi_2', label: 'Sesi 2: Materi', icon: 'presentation', color: 'purple' },
             { id: 'sesi_3', label: 'Sesi 3: Ibadah Malam', icon: 'moon', color: 'violet' },
@@ -66,15 +65,18 @@
 
         const App = () => {
             // --- STATE ---
-            const [view, setView] = useState('menu'); // menu, scan, database, report
-            const [activeSession, setActiveSession] = useState(SESSION_LIST[0]); // Default Sesi
-            
-            const [participants, setParticipants] = useState({}); // Object Dictionary {id: data}
-            const [attendanceData, setAttendanceData] = useState({}); // { sessionId: { userId: timestamp } }
-            
+            const [view, setView] = useState('menu'); 
+            const [activeSession, setActiveSession] = useState(SESSION_LIST[0]); 
+            const [participants, setParticipants] = useState({}); 
+            const [attendanceData, setAttendanceData] = useState({}); 
             const [isConnected, setIsConnected] = useState(false);
-            const [manualMode, setManualMode] = useState(false); // Toggle Scanner vs Manual Input
+            const [manualMode, setManualMode] = useState(false); 
             
+            // QR Generation State
+            const [isDownloading, setIsDownloading] = useState(false);
+            const [showAddForm, setShowAddForm] = useState(false);
+            const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu' });
+
             // UI State
             const [scanResult, setScanResult] = useState(null);
             const scannerRef = useRef(null);
@@ -83,42 +85,78 @@
             // --- SYNC ENGINE ---
             useEffect(() => {
                 lucide.createIcons();
-                
                 const timer = setTimeout(() => {
                     if (!window.db) return;
                     setIsConnected(true);
 
-                    // 1. Sync Data Peserta
                     const pRef = window.dbRef(window.db, 'participants');
-                    window.dbOnValue(pRef, (snapshot) => {
-                        setParticipants(snapshot.val() || {});
-                    });
+                    window.dbOnValue(pRef, (snapshot) => { setParticipants(snapshot.val() || {}); });
 
-                    // 2. Sync Data Absensi (Struktur Baru: attendance/{sessionId}/{userId})
                     const aRef = window.dbRef(window.db, 'attendance');
-                    window.dbOnValue(aRef, (snapshot) => {
-                        setAttendanceData(snapshot.val() || {});
-                    });
-
+                    window.dbOnValue(aRef, (snapshot) => { setAttendanceData(snapshot.val() || {}); });
                 }, 1000);
                 return () => clearTimeout(timer);
             }, []);
 
-            useEffect(() => { lucide.createIcons(); }, [view, activeSession, manualMode, scanResult]);
+            useEffect(() => { lucide.createIcons(); }, [view, activeSession, manualMode, scanResult, participants]);
+
+            // --- FUNGSI GENERATE & DOWNLOAD QR ---
+            const generateQRUrl = (text) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
+
+            const downloadAllQR = async () => {
+                const pList = Object.values(participants);
+                if (pList.length === 0) return alert("Data peserta kosong!");
+                
+                setIsDownloading(true);
+                alert("Sedang memproses download... Mohon jangan tutup browser sampai selesai.");
+
+                for (const p of pList) {
+                    try {
+                        const response = await fetch(generateQRUrl(p.id));
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+
+                        // Delay agar browser tidak hang
+                        await new Promise(r => setTimeout(r, 500));
+                    } catch (e) {
+                        console.error("Gagal download", p.nama);
+                    }
+                }
+                setIsDownloading(false);
+                alert("Selesai mendownload semua QR Code!");
+            };
+
+            const downloadSingleQR = async (p) => {
+                try {
+                    const response = await fetch(generateQRUrl(p.id));
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                } catch(e) { alert("Gagal download QR"); }
+            };
 
             // --- LOGIC: SCANNING ---
             const handleScan = (qrId) => {
                 if (scannerRef.current) scannerRef.current.pause();
 
                 const participant = participants[qrId];
-                
-                // 1. Cek Validitas Peserta
                 if (!participant) {
                     setScanResult({ success: false, title: 'GAGAL', msg: 'QR Code Tidak Dikenali/Tidak Terdaftar' });
                     return;
                 }
 
-                // 2. Cek Duplikasi di Sesi Aktif
                 const sessionData = attendanceData[activeSession.id] || {};
                 const existingLog = sessionData[qrId];
 
@@ -126,23 +164,16 @@
                     let msg = `Peserta sudah check-in di ${activeSession.label}`;
                     if (activeSession.id === 'hadiah') msg = "HADIAH SUDAH DIAMBIL SEBELUMNYA!";
                     
-                    setScanResult({ 
-                        success: false, 
-                        title: 'SUDAH ADA', 
-                        msg: msg, 
-                        p: participant, 
-                        time: existingLog.timestamp 
-                    });
+                    setScanResult({ success: false, title: 'SUDAH ADA', msg: msg, p: participant, time: existingLog.timestamp });
                     return;
                 }
 
-                // 3. Simpan Data (Check-in / Claim Hadiah)
                 const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
                 const path = `attendance/${activeSession.id}/${qrId}`;
                 
                 window.dbSet(window.dbRef(window.db, path), {
                     timestamp: timestamp,
-                    name: participant.nama, // Simpan nama snapshot utk backup
+                    name: participant.nama,
                     category: participant.category,
                     device: navigator.userAgent.includes('Mobile') ? 'HP' : 'Laptop'
                 });
@@ -173,20 +204,14 @@
             }, [view, manualMode, scanResult]);
 
 
-            // --- LOGIC: MANUAL INPUT ---
+            // --- LOGIC: MANUAL INPUT & DATA ---
             const filteredParticipants = useMemo(() => {
                 if (!searchQuery) return Object.values(participants);
-                return Object.values(participants).filter(p => 
-                    p.nama.toLowerCase().includes(searchQuery.toLowerCase())
-                );
+                return Object.values(participants).filter(p => p.nama.toLowerCase().includes(searchQuery.toLowerCase()));
             }, [participants, searchQuery]);
 
-            const handleManualCheckIn = (p) => {
-                // Gunakan logic yang sama dengan Scan
-                handleScan(p.id);
-            };
+            const handleManualCheckIn = (p) => { handleScan(p.id); };
 
-            // --- LOGIC: DATABASE & REPORT ---
             const handleUploadCSV = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -197,9 +222,7 @@
                         const [nama, kategori] = line.split(',').map(s => s?.trim());
                         if (nama) {
                             const id = `GSM-${Date.now()}-${idx}`;
-                            window.dbSet(window.dbRef(window.db, `participants/${id}`), { 
-                                id, nama, category: kategori || 'Umum' 
-                            });
+                            window.dbSet(window.dbRef(window.db, `participants/${id}`), { id, nama, category: kategori || 'Umum' });
                         }
                     });
                     alert("Upload CSV Berhasil!");
@@ -207,16 +230,22 @@
                 reader.readAsText(file);
             };
 
+            const handleManualAdd = () => {
+                if(!formData.nama) return alert("Nama wajib diisi!");
+                const id = `M-${Date.now()}`;
+                window.dbSet(window.dbRef(window.db, `participants/${id}`), { 
+                    id, nama: formData.nama, category: formData.kategori 
+                });
+                setFormData({nama:'', kategori:'Anak Sekolah Minggu'});
+                alert("Peserta ditambahkan!");
+            };
+
             const downloadReport = () => {
-                // Header CSV
                 let csv = 'No,ID,Nama,Kategori';
                 SESSION_LIST.forEach(s => csv += `,${s.label}`);
                 csv += '\n';
-
-                // Data Rows
                 Object.values(participants).forEach((p, idx) => {
                     let row = `${idx+1},${p.id},"${p.nama}",${p.category}`;
-                    
                     SESSION_LIST.forEach(session => {
                         const sessionLog = attendanceData[session.id] || {};
                         const log = sessionLog[p.id];
@@ -224,10 +253,9 @@
                     });
                     csv += `\n${row}`;
                 });
-
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
-                link.download = 'Laporan_Lengkap_Retreat.csv';
+                link.download = 'Laporan_Retreat_Lengkap.csv';
                 link.click();
             };
 
@@ -247,33 +275,20 @@
                             <h1 className="text-2xl font-bold">Retreat GSM GKPS</h1>
                             <p className="opacity-80">Sistem Absensi Multi-Sesi</p>
                             <div className={`mt-2 inline-block px-3 py-1 rounded-full text-[10px] font-bold ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}>
-                                {isConnected ? 'SERVER ONLINE' : 'OFFLINE'}
+                                {isConnected ? 'ONLINE' : 'OFFLINE'}
                             </div>
                         </div>
 
                         <div className="p-6 space-y-4">
-                            {/* PILIH SESI */}
                             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Pilih Kegiatan Aktif:</label>
                                 <div className="space-y-2">
                                     {SESSION_LIST.map(s => (
-                                        <button 
-                                            key={s.id}
-                                            onClick={() => setActiveSession(s)}
-                                            className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all ${
-                                                activeSession.id === s.id 
-                                                ? `bg-${s.color}-50 border-${s.color}-500 ring-1 ring-${s.color}-500` 
-                                                : 'bg-white border-slate-200 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            <div className={`p-2 rounded bg-${s.color}-100 text-${s.color}-600`}>
-                                                <i data-lucide={s.icon} width="18"></i>
-                                            </div>
+                                        <button key={s.id} onClick={() => setActiveSession(s)} className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all ${activeSession.id === s.id ? `bg-${s.color}-50 border-${s.color}-500 ring-1 ring-${s.color}-500` : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
+                                            <div className={`p-2 rounded bg-${s.color}-100 text-${s.color}-600`}><i data-lucide={s.icon} width="18"></i></div>
                                             <div className="text-left flex-1">
                                                 <div className="font-bold text-sm text-slate-700">{s.label}</div>
-                                                <div className="text-[10px] text-slate-500">
-                                                    Hadir: {Object.keys(attendanceData[s.id] || {}).length}
-                                                </div>
+                                                <div className="text-[10px] text-slate-500">Hadir: {Object.keys(attendanceData[s.id] || {}).length}</div>
                                             </div>
                                             {activeSession.id === s.id && <i data-lucide="check-circle" className={`text-${s.color}-600`} width="16"></i>}
                                         </button>
@@ -287,44 +302,38 @@
 
                             <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
                                 <button onClick={() => setView('database')} className="p-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-bold flex flex-col items-center gap-1">
-                                    <i data-lucide="database" width="20"></i> Data Peserta
+                                    <i data-lucide="qr-code" width="20"></i> Database & QR
                                 </button>
                                 <button onClick={() => setView('report')} className="p-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-bold flex flex-col items-center gap-1">
                                     <i data-lucide="file-spreadsheet" width="20"></i> Laporan
                                 </button>
                             </div>
-                            
                             <button onClick={resetDatabase} className="w-full text-center text-[10px] text-red-300 hover:text-red-500 py-2">Reset System</button>
                         </div>
                     </div>
                 </div>
             );
 
-            // --- VIEW: SCANNER & MANUAL ---
+            // --- VIEW: SCANNER ---
             if (view === 'scan') return (
                 <div className="min-h-screen bg-black flex flex-col">
-                    {/* Header */}
                     <div className="bg-gray-900 p-4 flex items-center justify-between text-white z-10 shadow-lg">
                         <button onClick={() => setView('menu')} className="flex items-center gap-2 text-gray-300"><i data-lucide="arrow-left"></i></button>
                         <div className="text-center">
-                            <div className="text-[10px] text-gray-400 uppercase tracking-widest">KEGIATAN AKTIF</div>
+                            <div className="text-[10px] text-gray-400 uppercase tracking-widest">KEGIATAN</div>
                             <div className={`font-bold text-${activeSession.color}-400 text-sm`}>{activeSession.label}</div>
                         </div>
-                        <div className="w-8"></div> {/* Spacer */}
+                        <div className="w-8"></div>
                     </div>
 
-                    {/* Main Content */}
                     <div className="flex-1 relative bg-black flex flex-col">
-                        
-                        {/* Toggle Mode */}
                         <div className="absolute top-4 left-0 right-0 z-20 flex justify-center">
                             <div className="bg-gray-800 rounded-full p-1 flex">
                                 <button onClick={() => setManualMode(false)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${!manualMode ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Kamera</button>
-                                <button onClick={() => setManualMode(true)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${manualMode ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Input Manual</button>
+                                <button onClick={() => setManualMode(true)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${manualMode ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Manual</button>
                             </div>
                         </div>
 
-                        {/* MODE: KAMERA */}
                         {!manualMode && (
                             <div className="flex-1 flex flex-col items-center justify-center p-4">
                                 <div id="reader" className="w-full max-w-sm bg-black border-2 border-indigo-500/50 rounded-xl overflow-hidden shadow-[0_0_30px_rgba(79,70,229,0.3)]"></div>
@@ -332,74 +341,36 @@
                             </div>
                         )}
 
-                        {/* MODE: MANUAL */}
                         {manualMode && (
                             <div className="flex-1 bg-gray-100 flex flex-col pt-16 rounded-t-3xl mt-12 overflow-hidden">
                                 <div className="px-4 pb-4 bg-white border-b shadow-sm">
                                     <div className="relative">
                                         <i data-lucide="search" className="absolute left-3 top-3 text-gray-400" width="18"></i>
-                                        <input 
-                                            type="text" 
-                                            placeholder="Cari nama peserta..." 
-                                            className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg border-none focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-700"
-                                            value={searchQuery}
-                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                        />
+                                        <input type="text" placeholder="Cari nama peserta..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg border-none focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-700" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/>
                                     </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2 scroller">
                                     {filteredParticipants.map(p => {
-                                        // Cek status di sesi ini
                                         const isDone = attendanceData[activeSession.id]?.[p.id];
                                         return (
                                             <div key={p.id} className="bg-white p-3 rounded-lg shadow-sm flex items-center justify-between">
-                                                <div>
-                                                    <div className="font-bold text-gray-800">{p.nama}</div>
-                                                    <div className="text-xs text-gray-500">{p.category}</div>
-                                                </div>
-                                                {isDone ? (
-                                                    <div className="bg-green-100 text-green-700 px-3 py-1 rounded text-xs font-bold flex items-center gap-1">
-                                                        <i data-lucide="check" width="12"></i> {isDone.timestamp.split(' ')[1]}
-                                                    </div>
-                                                ) : (
-                                                    <button onClick={() => handleManualCheckIn(p)} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700">
-                                                        Hadir / Ambil
-                                                    </button>
-                                                )}
+                                                <div><div className="font-bold text-gray-800">{p.nama}</div><div className="text-xs text-gray-500">{p.category}</div></div>
+                                                {isDone ? <div className="bg-green-100 text-green-700 px-3 py-1 rounded text-xs font-bold flex items-center gap-1"><i data-lucide="check" width="12"></i> OK</div> : <button onClick={() => handleManualCheckIn(p)} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700">Pilih</button>}
                                             </div>
                                         )
                                     })}
-                                    {filteredParticipants.length === 0 && (
-                                        <div className="text-center text-gray-400 py-10">Peserta tidak ditemukan</div>
-                                    )}
                                 </div>
                             </div>
                         )}
 
-                        {/* RESULT MODAL */}
                         {scanResult && (
                             <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-6 backdrop-blur-sm">
                                 <div className="bg-white w-full max-w-sm rounded-2xl p-6 text-center animate-fade-in shadow-2xl">
-                                    <div className="flex justify-center mb-4">
-                                        {scanResult.success ? <i data-lucide="check-circle" className="text-green-500 w-16 h-16"></i> : <i data-lucide="alert-circle" className="text-red-500 w-16 h-16"></i>}
-                                    </div>
+                                    <div className="flex justify-center mb-4">{scanResult.success ? <i data-lucide="check-circle" className="text-green-500 w-16 h-16"></i> : <i data-lucide="alert-circle" className="text-red-500 w-16 h-16"></i>}</div>
                                     <h3 className={`text-2xl font-black mb-1 ${scanResult.success ? 'text-green-700' : 'text-red-600'}`}>{scanResult.title}</h3>
                                     <p className="text-gray-600 font-medium text-sm mb-4">{scanResult.msg}</p>
-                                    
-                                    {scanResult.p && (
-                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 text-left">
-                                            <div className="text-xs text-gray-400 uppercase font-bold">Peserta:</div>
-                                            <div className="font-bold text-lg text-slate-800">{scanResult.p.nama}</div>
-                                            <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-200">
-                                                <span className="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full">{scanResult.p.category}</span>
-                                                <span className="text-xs text-gray-400">{scanResult.time}</span>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <button onClick={() => setScanResult(null)} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-gray-900 transition">
-                                        Tutup / Lanjut Scan
-                                    </button>
+                                    {scanResult.p && <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 text-left"><div className="text-xs text-gray-400 uppercase font-bold">Peserta:</div><div className="font-bold text-lg text-slate-800">{scanResult.p.nama}</div><div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-200"><span className="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full">{scanResult.p.category}</span><span className="text-xs text-gray-400">{scanResult.time}</span></div></div>}
+                                    <button onClick={() => setScanResult(null)} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-gray-900 transition">Tutup / Lanjut Scan</button>
                                 </div>
                             </div>
                         )}
@@ -407,7 +378,7 @@
                 </div>
             );
 
-            // --- VIEW: DATABASE & REPORT (Digabung biar ringkas) ---
+            // --- VIEW: DATABASE & REPORT ---
             if (view === 'database' || view === 'report') return (
                 <div className="min-h-screen bg-slate-50 p-4">
                     <div className="max-w-2xl mx-auto">
@@ -417,36 +388,54 @@
                             <div className="p-4 border-b bg-slate-100 flex justify-between items-center">
                                 <h2 className="font-bold text-slate-700 flex items-center gap-2">
                                     <i data-lucide={view === 'database' ? 'database' : 'file-spreadsheet'}></i>
-                                    {view === 'database' ? 'Database Peserta' : 'Laporan Lengkap'}
+                                    {view === 'database' ? 'Database & QR' : 'Laporan Lengkap'}
                                 </h2>
-                                {view === 'report' && (
-                                    <button onClick={downloadReport} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex gap-1 items-center hover:bg-green-700">
-                                        <i data-lucide="download" width="14"></i> Download CSV
-                                    </button>
-                                )}
+                                {view === 'report' && <button onClick={downloadReport} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex gap-1 items-center hover:bg-green-700"><i data-lucide="download" width="14"></i> CSV</button>}
                             </div>
 
                             {view === 'database' && (
-                                <div className="p-6 text-center border-b border-dashed">
-                                    <div className="relative inline-block">
-                                        <input type="file" accept=".csv" onChange={handleUploadCSV} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                        <button className="bg-indigo-50 text-indigo-600 px-6 py-3 rounded-lg font-bold border border-indigo-200 hover:bg-indigo-100 flex items-center gap-2">
-                                            <i data-lucide="upload-cloud"></i> Upload CSV Peserta
+                                <div className="p-4 border-b space-y-4">
+                                    {/* Upload CSV */}
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <input type="file" accept=".csv" onChange={handleUploadCSV} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                            <button className="w-full bg-slate-100 text-slate-600 px-4 py-2 rounded-lg font-bold border border-slate-300 hover:bg-slate-200 flex items-center justify-center gap-2 text-xs">
+                                                <i data-lucide="upload-cloud" width="16"></i> Upload CSV
+                                            </button>
+                                        </div>
+                                        <button onClick={() => setShowAddForm(!showAddForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700 text-xs flex items-center gap-2">
+                                            <i data-lucide="plus" width="16"></i> Manual
                                         </button>
                                     </div>
-                                    <p className="text-[10px] text-gray-400 mt-2">Format CSV: Nama,Kategori</p>
+
+                                    {/* Manual Form */}
+                                    {showAddForm && (
+                                        <div className="bg-slate-50 p-3 rounded-lg border animate-fade-in">
+                                            <input className="w-full p-2 border rounded mb-2 text-sm" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
+                                            <div className="flex gap-2">
+                                                <select className="flex-1 p-2 border rounded text-sm" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
+                                                    <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
+                                                </select>
+                                                <button onClick={handleManualAdd} className="bg-indigo-600 text-white px-4 rounded font-bold text-sm">Simpan</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Download All QR */}
+                                    {Object.keys(participants).length > 0 && (
+                                        <button onClick={downloadAllQR} disabled={isDownloading} className={`w-full py-3 rounded-lg font-bold text-white flex items-center justify-center gap-2 transition ${isDownloading ? 'bg-slate-400' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                                            {isDownloading ? 'Sedang Mendownload...' : <><i data-lucide="download"></i> Download Semua QR Code</>}
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
-                            <div className="overflow-x-auto">
+                            <div className="overflow-x-auto max-h-[60vh] scroller">
                                 <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 text-slate-500 font-bold text-xs uppercase">
+                                    <thead className="bg-slate-50 text-slate-500 font-bold text-xs uppercase sticky top-0">
                                         <tr>
-                                            <th className="p-3">Nama</th>
-                                            {/* Di report, tampilkan kolom per sesi */}
-                                            {view === 'report' ? SESSION_LIST.map(s => (
-                                                <th key={s.id} className="p-3 whitespace-nowrap">{s.label.split(':')[0]}</th>
-                                            )) : <th className="p-3">Kategori</th>}
+                                            <th className="p-3 bg-slate-50">Nama Peserta</th>
+                                            {view === 'report' ? SESSION_LIST.map(s => <th key={s.id} className="p-3 whitespace-nowrap bg-slate-50">{s.label.split(':')[0]}</th>) : <th className="p-3 bg-slate-50 text-right">QR Code</th>}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -454,22 +443,17 @@
                                             <tr key={p.id} className="hover:bg-slate-50">
                                                 <td className="p-3 font-medium text-slate-700">
                                                     {p.nama}
-                                                    {view === 'database' && <div className="text-[10px] text-gray-400">{p.id}</div>}
+                                                    <div className="text-[10px] text-gray-400">{p.category}</div>
                                                 </td>
-                                                
                                                 {view === 'report' ? SESSION_LIST.map(s => {
                                                     const log = attendanceData[s.id]?.[p.id];
-                                                    return (
-                                                        <td key={s.id} className="p-3 text-center">
-                                                            {log ? (
-                                                                <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">OK</span>
-                                                            ) : (
-                                                                <span className="text-gray-200">-</span>
-                                                            )}
-                                                        </td>
-                                                    )
+                                                    return <td key={s.id} className="p-3 text-center">{log ? <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">OK</span> : <span className="text-gray-200">-</span>}</td>
                                                 }) : (
-                                                    <td className="p-3 text-slate-500">{p.category}</td>
+                                                    <td className="p-3 text-right">
+                                                        <button onClick={() => downloadSingleQR(p)} className="text-indigo-600 hover:bg-indigo-50 p-2 rounded-lg" title="Download QR">
+                                                            <i data-lucide="qr-code" width="20"></i>
+                                                        </button>
+                                                    </td>
                                                 )}
                                             </tr>
                                         ))}
@@ -481,7 +465,7 @@
                 </div>
             );
 
-            return null; // Fallback
+            return null;
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
