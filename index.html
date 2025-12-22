@@ -2,8 +2,8 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Retreat GSM GKPS - All In One System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Retreat GSM GKPS - Professional System</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,12 +12,23 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
-        body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-        .animate-fade-in { animation: fadeIn 0.3s ease-in; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .scroller::-webkit-scrollbar { width: 4px; }
-        .scroller::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+        body { font-family: 'Inter', sans-serif; background-color: #F3F4F6; -webkit-tap-highlight-color: transparent; }
+        
+        /* Animations */
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pulse-soft { 0% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(79, 70, 229, 0); } 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); } }
+        
+        .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+        .btn-pulse { animation: pulse-soft 2s infinite; }
+        
+        /* Glassmorphism Cards */
+        .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.5); }
+        
+        /* Custom Scrollbar */
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 
     <script type="module">
@@ -38,422 +49,460 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // Binding ke Window
-        window.db = db;
-        window.dbRef = ref;
-        window.dbSet = set;
-        window.dbUpdate = update;
-        window.dbOnValue = onValue;
-        window.dbRemove = remove;
+        // Bind to Window for React
+        window.db = db; window.dbRef = ref; window.dbSet = set; window.dbOnValue = onValue; window.dbRemove = remove;
     </script>
 </head>
-<body class="bg-slate-100 text-slate-800 font-sans">
+<body>
 
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
-        // --- KONFIGURASI SESI ACARA ---
-        const SESSION_LIST = [
-            { id: 'registrasi_awal', label: 'Registrasi Awal', icon: 'user-check', color: 'blue' },
-            { id: 'sesi_1', label: 'Sesi 1: Pembukaan', icon: 'book-open', color: 'indigo' },
-            { id: 'sesi_2', label: 'Sesi 2: Materi', icon: 'presentation', color: 'purple' },
-            { id: 'sesi_3', label: 'Sesi 3: Ibadah Malam', icon: 'moon', color: 'violet' },
-            { id: 'hadiah', label: 'Pengambilan Hadiah', icon: 'gift', color: 'pink' }
+        // --- DAFTAR SESI ---
+        const SESSIONS = [
+            { id: 'registrasi_awal', title: 'Registrasi Awal', desc: 'Check-in Kedatangan', icon: 'user-check', color: 'blue' },
+            { id: 'sesi_1', title: 'Sesi 1', desc: 'Pembukaan', icon: 'book-open', color: 'indigo' },
+            { id: 'sesi_2', title: 'Sesi 2', desc: 'Materi', icon: 'presentation', color: 'violet' },
+            { id: 'sesi_3', title: 'Sesi 3', desc: 'Ibadah Malam', icon: 'moon', color: 'purple' },
+            { id: 'hadiah', title: 'Hadiah', desc: 'Pengambilan Souvenir', icon: 'gift', color: 'pink' }
         ];
 
         const App = () => {
-            // --- STATE ---
-            const [view, setView] = useState('menu'); 
-            const [activeSession, setActiveSession] = useState(SESSION_LIST[0]); 
-            const [participants, setParticipants] = useState({}); 
-            const [attendanceData, setAttendanceData] = useState({}); 
-            const [isConnected, setIsConnected] = useState(false);
-            const [manualMode, setManualMode] = useState(false); 
+            // State Utama
+            const [view, setView] = useState('menu'); // menu, scan, database, report
+            const [activeSession, setActiveSession] = useState(SESSIONS[0]);
             
-            // QR Generation State
-            const [isDownloading, setIsDownloading] = useState(false);
-            const [showAddForm, setShowAddForm] = useState(false);
-            const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu' });
-
+            // Data State
+            const [participants, setParticipants] = useState({});
+            const [attendance, setAttendance] = useState({});
+            const [isConnected, setIsConnected] = useState(false);
+            
             // UI State
             const [scanResult, setScanResult] = useState(null);
-            const scannerRef = useRef(null);
+            const [manualMode, setManualMode] = useState(false);
             const [searchQuery, setSearchQuery] = useState("");
+            
+            // Refs
+            const scannerRef = useRef(null);
 
-            // --- SYNC ENGINE ---
+            // --- SYNC FIREBASE ---
             useEffect(() => {
                 lucide.createIcons();
-                const timer = setTimeout(() => {
+                const initFirebase = setTimeout(() => {
                     if (!window.db) return;
                     setIsConnected(true);
+                    
+                    // Sync Participants
+                    window.dbOnValue(window.dbRef(window.db, 'participants'), (snap) => {
+                        setParticipants(snap.val() || {});
+                    });
 
-                    const pRef = window.dbRef(window.db, 'participants');
-                    window.dbOnValue(pRef, (snapshot) => { setParticipants(snapshot.val() || {}); });
-
-                    const aRef = window.dbRef(window.db, 'attendance');
-                    window.dbOnValue(aRef, (snapshot) => { setAttendanceData(snapshot.val() || {}); });
+                    // Sync Attendance
+                    window.dbOnValue(window.dbRef(window.db, 'attendance'), (snap) => {
+                        setAttendance(snap.val() || {});
+                    });
                 }, 1000);
-                return () => clearTimeout(timer);
+                return () => clearTimeout(initFirebase);
             }, []);
 
-            useEffect(() => { lucide.createIcons(); }, [view, activeSession, manualMode, scanResult, participants]);
-
-            // --- FUNGSI GENERATE & DOWNLOAD QR ---
-            const generateQRUrl = (text) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
-
-            const downloadAllQR = async () => {
-                const pList = Object.values(participants);
-                if (pList.length === 0) return alert("Data peserta kosong!");
-                
-                setIsDownloading(true);
-                alert("Sedang memproses download... Mohon jangan tutup browser sampai selesai.");
-
-                for (const p of pList) {
-                    try {
-                        const response = await fetch(generateQRUrl(p.id));
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-                        
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-
-                        // Delay agar browser tidak hang
-                        await new Promise(r => setTimeout(r, 500));
-                    } catch (e) {
-                        console.error("Gagal download", p.nama);
-                    }
-                }
-                setIsDownloading(false);
-                alert("Selesai mendownload semua QR Code!");
-            };
-
-            const downloadSingleQR = async (p) => {
-                try {
-                    const response = await fetch(generateQRUrl(p.id));
-                    const blob = await response.blob();
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
-                    link.click();
-                    URL.revokeObjectURL(url);
-                } catch(e) { alert("Gagal download QR"); }
-            };
+            // Refresh Icons on render
+            useEffect(() => { lucide.createIcons(); }, [view, activeSession, manualMode, scanResult]);
 
             // --- LOGIC: SCANNING ---
-            const handleScan = (qrId) => {
-                if (scannerRef.current) scannerRef.current.pause();
-
-                const participant = participants[qrId];
-                if (!participant) {
-                    setScanResult({ success: false, title: 'GAGAL', msg: 'QR Code Tidak Dikenali/Tidak Terdaftar' });
-                    return;
-                }
-
-                const sessionData = attendanceData[activeSession.id] || {};
-                const existingLog = sessionData[qrId];
-
-                if (existingLog) {
-                    let msg = `Peserta sudah check-in di ${activeSession.label}`;
-                    if (activeSession.id === 'hadiah') msg = "HADIAH SUDAH DIAMBIL SEBELUMNYA!";
-                    
-                    setScanResult({ success: false, title: 'SUDAH ADA', msg: msg, p: participant, time: existingLog.timestamp });
-                    return;
-                }
-
-                const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
-                const path = `attendance/${activeSession.id}/${qrId}`;
+            const processCheckIn = (qrId) => {
+                const p = participants[qrId];
                 
-                window.dbSet(window.dbRef(window.db, path), {
-                    timestamp: timestamp,
-                    name: participant.nama,
-                    category: participant.category,
-                    device: navigator.userAgent.includes('Mobile') ? 'HP' : 'Laptop'
+                // 1. Validasi Peserta
+                if (!p) {
+                    setScanResult({ success: false, title: 'QR TIDAK DIKENALI', msg: 'Peserta tidak terdaftar di database.' });
+                    return;
+                }
+
+                // 2. Validasi Duplikat (Per Sesi)
+                const sessionLog = attendance[activeSession.id] || {};
+                const existing = sessionLog[qrId];
+
+                if (existing) {
+                    setScanResult({ 
+                        success: false, 
+                        title: 'SUDAH CHECK-IN', 
+                        msg: `${p.nama} sudah scan di ${activeSession.title} pada ${existing.timestamp.split(' ')[1]}`,
+                        p: p 
+                    });
+                    return;
+                }
+
+                // 3. Simpan ke Firebase
+                const now = new Date();
+                const timestamp = now.toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
+                
+                window.dbSet(window.dbRef(window.db, `attendance/${activeSession.id}/${qrId}`), {
+                    timestamp,
+                    name: p.nama,
+                    category: p.category,
+                    device: 'Web App'
                 });
 
-                setScanResult({ 
-                    success: true, 
-                    title: activeSession.id === 'hadiah' ? 'HADIAH DIBERIKAN' : 'BERHASIL', 
-                    msg: `Selamat datang, ${participant.nama}`, 
-                    p: participant, 
-                    time: timestamp 
+                setScanResult({
+                    success: true,
+                    title: activeSession.id === 'hadiah' ? 'HADIAH DIBERIKAN' : 'BERHASIL',
+                    msg: `Selamat datang, ${p.nama}`,
+                    p: p,
+                    time: timestamp
                 });
             };
 
+            // Start Camera
             const startScanner = () => {
-                if (manualMode) return;
                 if (scannerRef.current) scannerRef.current.clear().catch(()=>{});
-                
                 const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, aspectRatio: 1.0 }, false);
-                scanner.render((text) => handleScan(text), (err) => {});
+                scanner.render((txt) => {
+                    scanner.pause();
+                    processCheckIn(txt);
+                }, (err) => {});
                 scannerRef.current = scanner;
             };
 
+            // Effect untuk menjalankan scanner saat view berubah ke 'scan'
             useEffect(() => {
                 if (view === 'scan' && !manualMode && !scanResult) {
-                    setTimeout(startScanner, 300);
-                    return () => { if(scannerRef.current) scannerRef.current.clear().catch(()=>{}); };
+                    // Beri delay sedikit agar elemen <div id="reader"> ter-render dulu di DOM
+                    const timer = setTimeout(() => startScanner(), 500);
+                    return () => { 
+                        clearTimeout(timer);
+                        if(scannerRef.current) scannerRef.current.clear().catch(()=>{}); 
+                    };
                 }
             }, [view, manualMode, scanResult]);
 
-
-            // --- LOGIC: MANUAL INPUT & DATA ---
-            const filteredParticipants = useMemo(() => {
-                if (!searchQuery) return Object.values(participants);
-                return Object.values(participants).filter(p => p.nama.toLowerCase().includes(searchQuery.toLowerCase()));
-            }, [participants, searchQuery]);
-
-            const handleManualCheckIn = (p) => { handleScan(p.id); };
-
+            // --- LOGIC: DATA & REPORT ---
             const handleUploadCSV = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (ev) => {
-                    const lines = ev.target.result.split('\n').filter(l => l.trim());
-                    lines.slice(1).forEach((line, idx) => {
-                        const [nama, kategori] = line.split(',').map(s => s?.trim());
-                        if (nama) {
+                    const lines = ev.target.result.split('\n').slice(1);
+                    let count = 0;
+                    lines.forEach((line, idx) => {
+                        const [nama, kategori] = line.split(',');
+                        if (nama && nama.trim()) {
                             const id = `GSM-${Date.now()}-${idx}`;
-                            window.dbSet(window.dbRef(window.db, `participants/${id}`), { id, nama, category: kategori || 'Umum' });
+                            window.dbSet(window.dbRef(window.db, `participants/${id}`), {
+                                id, nama: nama.trim(), category: kategori ? kategori.trim() : 'Umum'
+                            });
+                            count++;
                         }
                     });
-                    alert("Upload CSV Berhasil!");
+                    alert(`Berhasil import ${count} peserta!`);
                 };
                 reader.readAsText(file);
             };
 
-            const handleManualAdd = () => {
-                if(!formData.nama) return alert("Nama wajib diisi!");
-                const id = `M-${Date.now()}`;
-                window.dbSet(window.dbRef(window.db, `participants/${id}`), { 
-                    id, nama: formData.nama, category: formData.kategori 
-                });
-                setFormData({nama:'', kategori:'Anak Sekolah Minggu'});
-                alert("Peserta ditambahkan!");
-            };
-
             const downloadReport = () => {
                 let csv = 'No,ID,Nama,Kategori';
-                SESSION_LIST.forEach(s => csv += `,${s.label}`);
+                SESSIONS.forEach(s => csv += `,${s.title}`);
                 csv += '\n';
-                Object.values(participants).forEach((p, idx) => {
-                    let row = `${idx+1},${p.id},"${p.nama}",${p.category}`;
-                    SESSION_LIST.forEach(session => {
-                        const sessionLog = attendanceData[session.id] || {};
-                        const log = sessionLog[p.id];
+                
+                Object.values(participants).forEach((p, i) => {
+                    let row = `${i+1},${p.id},"${p.nama}",${p.category}`;
+                    SESSIONS.forEach(s => {
+                        const log = attendance[s.id]?.[p.id];
                         row += `,${log ? log.timestamp.replace(',', '') : '-'}`;
                     });
                     csv += `\n${row}`;
                 });
+
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
                 link.download = 'Laporan_Retreat_Lengkap.csv';
                 link.click();
             };
 
-            const resetDatabase = () => {
-                if (prompt("Masukkan Password Admin:") === "GKPS2025") {
-                    window.dbRemove(window.dbRef(window.db, 'participants'));
-                    window.dbRemove(window.dbRef(window.db, 'attendance'));
-                    alert("Database Reset Selesai.");
-                }
-            };
+            // --- COMPONENTS ---
 
-            // --- VIEW: MENU ---
+            // 1. MENU UTAMA (Dashboard)
             if (view === 'menu') return (
-                <div className="min-h-screen bg-gradient-to-br from-slate-100 to-indigo-100 p-4 pt-8">
-                    <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
-                        <div className="bg-indigo-700 p-6 text-white text-center">
-                            <h1 className="text-2xl font-bold">Retreat GSM GKPS</h1>
-                            <p className="opacity-80">Sistem Absensi Multi-Sesi</p>
-                            <div className={`mt-2 inline-block px-3 py-1 rounded-full text-[10px] font-bold ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}>
-                                {isConnected ? 'ONLINE' : 'OFFLINE'}
-                            </div>
+                <div className="min-h-screen bg-slate-50 relative pb-24">
+                    {/* Header */}
+                    <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-8 rounded-b-[40px] shadow-xl text-white text-center relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+                        <h1 className="text-3xl font-extrabold tracking-tight relative z-10">Retreat GSM GKPS</h1>
+                        <p className="text-indigo-100 mt-1 relative z-10">Sistem Absensi Multi-Sesi</p>
+                        <div className={`mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold backdrop-blur-md bg-white/20 border border-white/30 ${isConnected ? 'text-green-300' : 'text-red-300'}`}>
+                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+                            {isConnected ? 'DATABASE CONNECTED' : 'CONNECTING...'}
                         </div>
+                    </div>
 
-                        <div className="p-6 space-y-4">
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Pilih Kegiatan Aktif:</label>
-                                <div className="space-y-2">
-                                    {SESSION_LIST.map(s => (
-                                        <button key={s.id} onClick={() => setActiveSession(s)} className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all ${activeSession.id === s.id ? `bg-${s.color}-50 border-${s.color}-500 ring-1 ring-${s.color}-500` : 'bg-white border-slate-200 hover:bg-slate-50'}`}>
-                                            <div className={`p-2 rounded bg-${s.color}-100 text-${s.color}-600`}><i data-lucide={s.icon} width="18"></i></div>
-                                            <div className="text-left flex-1">
-                                                <div className="font-bold text-sm text-slate-700">{s.label}</div>
-                                                <div className="text-[10px] text-slate-500">Hadir: {Object.keys(attendanceData[s.id] || {}).length}</div>
+                    <div className="max-w-md mx-auto px-6 -mt-8 relative z-20">
+                        <div className="glass-card rounded-2xl p-6 shadow-lg animate-slide-up">
+                            <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Pilih Kegiatan Aktif:</h2>
+                            
+                            <div className="space-y-3">
+                                {SESSIONS.map((s) => {
+                                    const isActive = activeSession.id === s.id;
+                                    const count = Object.keys(attendance[s.id] || {}).length;
+                                    
+                                    return (
+                                        <button 
+                                            key={s.id}
+                                            onClick={() => setActiveSession(s)}
+                                            className={`w-full flex items-center p-3 rounded-xl border-2 transition-all duration-200 ${
+                                                isActive 
+                                                ? `border-${s.color}-500 bg-${s.color}-50 shadow-md transform scale-[1.02]` 
+                                                : 'border-transparent bg-gray-50 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${isActive ? `bg-${s.color}-500` : 'bg-gray-300'}`}>
+                                                <i data-lucide={s.icon} width="20"></i>
                                             </div>
-                                            {activeSession.id === s.id && <i data-lucide="check-circle" className={`text-${s.color}-600`} width="16"></i>}
+                                            <div className="ml-3 text-left flex-1">
+                                                <div className={`font-bold text-sm ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{s.title}</div>
+                                                <div className="text-[10px] text-gray-400">{s.desc}</div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className={`text-xs font-bold ${isActive ? `text-${s.color}-600` : 'text-gray-400'}`}>
+                                                    Hadir: {count}
+                                                </div>
+                                            </div>
+                                            {isActive && <div className={`ml-2 text-${s.color}-500`}><i data-lucide="check-circle" width="16"></i></div>}
                                         </button>
-                                    ))}
-                                </div>
+                                    );
+                                })}
                             </div>
-
-                            <button onClick={() => setView('scan')} className="w-full bg-indigo-600 text-white p-4 rounded-xl shadow-lg hover:bg-indigo-700 font-bold flex items-center justify-center gap-2 transform active:scale-95 transition">
-                                <i data-lucide="scan-line"></i> MULAI SCAN KEGIATAN INI
-                            </button>
-
-                            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
-                                <button onClick={() => setView('database')} className="p-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-bold flex flex-col items-center gap-1">
-                                    <i data-lucide="qr-code" width="20"></i> Database & QR
-                                </button>
-                                <button onClick={() => setView('report')} className="p-3 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 text-sm font-bold flex flex-col items-center gap-1">
-                                    <i data-lucide="file-spreadsheet" width="20"></i> Laporan
-                                </button>
-                            </div>
-                            <button onClick={resetDatabase} className="w-full text-center text-[10px] text-red-300 hover:text-red-500 py-2">Reset System</button>
                         </div>
+
+                        {/* Menu Grid */}
+                        <div className="grid grid-cols-2 gap-4 mt-6">
+                            <button onClick={() => setView('database')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
+                                <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><i data-lucide="database" width="20"></i></div>
+                                <span className="text-xs font-bold text-gray-600">Database</span>
+                            </button>
+                            <button onClick={() => setView('report')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
+                                <div className="p-3 bg-green-100 text-green-600 rounded-full"><i data-lucide="file-text" width="20"></i></div>
+                                <span className="text-xs font-bold text-gray-600">Laporan</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Floating Action Button (FAB) */}
+                    <div className="fixed bottom-6 left-0 right-0 px-6 z-50 flex justify-center">
+                        <button 
+                            onClick={() => setView('scan')}
+                            className="w-full max-w-md bg-indigo-600 text-white p-4 rounded-2xl shadow-xl shadow-indigo-300 btn-pulse flex items-center justify-center gap-3 font-bold text-lg transform transition active:scale-95"
+                        >
+                            <i data-lucide="scan-line"></i>
+                            MULAI SCAN KEGIATAN INI
+                        </button>
                     </div>
                 </div>
             );
 
-            // --- VIEW: SCANNER ---
+            // 2. SCANNER VIEW
             if (view === 'scan') return (
-                <div className="min-h-screen bg-black flex flex-col">
-                    <div className="bg-gray-900 p-4 flex items-center justify-between text-white z-10 shadow-lg">
-                        <button onClick={() => setView('menu')} className="flex items-center gap-2 text-gray-300"><i data-lucide="arrow-left"></i></button>
+                <div className="fixed inset-0 bg-black z-50 flex flex-col">
+                    {/* Top Bar */}
+                    <div className="bg-gray-900/80 backdrop-blur-md p-4 pt-safe flex items-center justify-between text-white z-10 border-b border-gray-800">
+                        <button onClick={() => setView('menu')} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700 transition"><i data-lucide="arrow-left"></i></button>
                         <div className="text-center">
-                            <div className="text-[10px] text-gray-400 uppercase tracking-widest">KEGIATAN</div>
-                            <div className={`font-bold text-${activeSession.color}-400 text-sm`}>{activeSession.label}</div>
+                            <div className="text-[10px] text-gray-400 uppercase tracking-widest">AKTIF SEKARANG</div>
+                            <div className="font-bold text-indigo-400 flex items-center gap-2 justify-center">
+                                <i data-lucide={activeSession.icon} width="14"></i> {activeSession.title}
+                            </div>
                         </div>
-                        <div className="w-8"></div>
+                        <div className="w-10"></div>
                     </div>
 
-                    <div className="flex-1 relative bg-black flex flex-col">
-                        <div className="absolute top-4 left-0 right-0 z-20 flex justify-center">
-                            <div className="bg-gray-800 rounded-full p-1 flex">
-                                <button onClick={() => setManualMode(false)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${!manualMode ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Kamera</button>
-                                <button onClick={() => setManualMode(true)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${manualMode ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Manual</button>
+                    {/* Content */}
+                    <div className="flex-1 relative overflow-hidden flex flex-col">
+                        
+                        {/* Mode Toggle */}
+                        <div className="absolute top-4 w-full flex justify-center z-20">
+                            <div className="bg-gray-800/80 backdrop-blur rounded-full p-1 flex border border-gray-700">
+                                <button onClick={() => setManualMode(false)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${!manualMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400'}`}>Kamera</button>
+                                <button onClick={() => setManualMode(true)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${manualMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400'}`}>Input Manual</button>
                             </div>
                         </div>
 
+                        {/* CAMERA AREA */}
                         {!manualMode && (
-                            <div className="flex-1 flex flex-col items-center justify-center p-4">
-                                <div id="reader" className="w-full max-w-sm bg-black border-2 border-indigo-500/50 rounded-xl overflow-hidden shadow-[0_0_30px_rgba(79,70,229,0.3)]"></div>
-                                <p className="text-gray-500 text-xs mt-4">Arahkan kamera ke QR Code Peserta</p>
+                            <div className="flex-1 flex flex-col items-center justify-center bg-black">
+                                <div className="relative w-full max-w-sm aspect-square">
+                                    <div id="reader" className="w-full h-full rounded-2xl overflow-hidden border-2 border-indigo-500/30"></div>
+                                    
+                                    {/* Overlay Frame */}
+                                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                                        <div className="w-64 h-64 border-2 border-indigo-500 rounded-lg relative opacity-70">
+                                            <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-white -mt-1 -ml-1"></div>
+                                            <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-white -mt-1 -mr-1"></div>
+                                            <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-white -mb-1 -ml-1"></div>
+                                            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-white -mb-1 -mr-1"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="absolute bottom-4 w-full text-center">
+                                        <p className="text-white/70 text-xs bg-black/50 inline-block px-3 py-1 rounded-full backdrop-blur">
+                                            Arahkan kamera ke QR Code
+                                        </p>
+                                    </div>
+                                </div>
                             </div>
                         )}
 
+                        {/* MANUAL INPUT AREA */}
                         {manualMode && (
-                            <div className="flex-1 bg-gray-100 flex flex-col pt-16 rounded-t-3xl mt-12 overflow-hidden">
-                                <div className="px-4 pb-4 bg-white border-b shadow-sm">
+                            <div className="flex-1 bg-gray-100 flex flex-col rounded-t-[30px] mt-16 overflow-hidden animate-slide-up">
+                                <div className="p-4 bg-white border-b shadow-sm">
                                     <div className="relative">
                                         <i data-lucide="search" className="absolute left-3 top-3 text-gray-400" width="18"></i>
-                                        <input type="text" placeholder="Cari nama peserta..." className="w-full pl-10 pr-4 py-2 bg-gray-100 rounded-lg border-none focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-gray-700" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Cari nama peserta..." 
+                                            className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 outline-none font-semibold text-gray-700"
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                        />
                                     </div>
                                 </div>
-                                <div className="flex-1 overflow-y-auto p-4 space-y-2 scroller">
-                                    {filteredParticipants.map(p => {
-                                        const isDone = attendanceData[activeSession.id]?.[p.id];
-                                        return (
-                                            <div key={p.id} className="bg-white p-3 rounded-lg shadow-sm flex items-center justify-between">
-                                                <div><div className="font-bold text-gray-800">{p.nama}</div><div className="text-xs text-gray-500">{p.category}</div></div>
-                                                {isDone ? <div className="bg-green-100 text-green-700 px-3 py-1 rounded text-xs font-bold flex items-center gap-1"><i data-lucide="check" width="12"></i> OK</div> : <button onClick={() => handleManualCheckIn(p)} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-indigo-700">Pilih</button>}
-                                            </div>
-                                        )
-                                    })}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                    {Object.values(participants)
+                                        .filter(p => p.nama.toLowerCase().includes(searchQuery.toLowerCase()))
+                                        .map(p => {
+                                            const isDone = attendance[activeSession.id]?.[p.id];
+                                            return (
+                                                <div key={p.id} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                                                    <div>
+                                                        <div className="font-bold text-gray-800">{p.nama}</div>
+                                                        <div className="text-xs text-gray-500">{p.category}</div>
+                                                    </div>
+                                                    {isDone ? (
+                                                        <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg border border-green-100 flex items-center gap-1">
+                                                            <i data-lucide="check" width="12"></i> Selesai
+                                                        </span>
+                                                    ) : (
+                                                        <button onClick={() => processCheckIn(p.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200">
+                                                            Pilih
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )
+                                        })
+                                    }
                                 </div>
                             </div>
                         )}
 
+                        {/* POPUP RESULT */}
                         {scanResult && (
-                            <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-6 backdrop-blur-sm">
-                                <div className="bg-white w-full max-w-sm rounded-2xl p-6 text-center animate-fade-in shadow-2xl">
-                                    <div className="flex justify-center mb-4">{scanResult.success ? <i data-lucide="check-circle" className="text-green-500 w-16 h-16"></i> : <i data-lucide="alert-circle" className="text-red-500 w-16 h-16"></i>}</div>
-                                    <h3 className={`text-2xl font-black mb-1 ${scanResult.success ? 'text-green-700' : 'text-red-600'}`}>{scanResult.title}</h3>
-                                    <p className="text-gray-600 font-medium text-sm mb-4">{scanResult.msg}</p>
-                                    {scanResult.p && <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 text-left"><div className="text-xs text-gray-400 uppercase font-bold">Peserta:</div><div className="font-bold text-lg text-slate-800">{scanResult.p.nama}</div><div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-200"><span className="bg-indigo-100 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full">{scanResult.p.category}</span><span className="text-xs text-gray-400">{scanResult.time}</span></div></div>}
-                                    <button onClick={() => setScanResult(null)} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-gray-900 transition">Tutup / Lanjut Scan</button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-
-            // --- VIEW: DATABASE & REPORT ---
-            if (view === 'database' || view === 'report') return (
-                <div className="min-h-screen bg-slate-50 p-4">
-                    <div className="max-w-2xl mx-auto">
-                        <button onClick={() => setView('menu')} className="mb-4 text-slate-500 flex items-center gap-2 font-bold"><i data-lucide="arrow-left"></i> Kembali ke Menu</button>
-                        
-                        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                            <div className="p-4 border-b bg-slate-100 flex justify-between items-center">
-                                <h2 className="font-bold text-slate-700 flex items-center gap-2">
-                                    <i data-lucide={view === 'database' ? 'database' : 'file-spreadsheet'}></i>
-                                    {view === 'database' ? 'Database & QR' : 'Laporan Lengkap'}
-                                </h2>
-                                {view === 'report' && <button onClick={downloadReport} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex gap-1 items-center hover:bg-green-700"><i data-lucide="download" width="14"></i> CSV</button>}
-                            </div>
-
-                            {view === 'database' && (
-                                <div className="p-4 border-b space-y-4">
-                                    {/* Upload CSV */}
-                                    <div className="flex gap-2">
-                                        <div className="relative flex-1">
-                                            <input type="file" accept=".csv" onChange={handleUploadCSV} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                            <button className="w-full bg-slate-100 text-slate-600 px-4 py-2 rounded-lg font-bold border border-slate-300 hover:bg-slate-200 flex items-center justify-center gap-2 text-xs">
-                                                <i data-lucide="upload-cloud" width="16"></i> Upload CSV
-                                            </button>
-                                        </div>
-                                        <button onClick={() => setShowAddForm(!showAddForm)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-indigo-700 text-xs flex items-center gap-2">
-                                            <i data-lucide="plus" width="16"></i> Manual
-                                        </button>
+                            <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+                                <div className={`w-full max-w-sm bg-white rounded-3xl p-6 text-center shadow-2xl mb-4 border-b-8 ${scanResult.success ? 'border-green-500' : 'border-red-500'}`}>
+                                    <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 ${scanResult.success ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                        <i data-lucide={scanResult.success ? (activeSession.id==='hadiah'?'gift':'check') : 'alert-triangle'} width="32"></i>
                                     </div>
-
-                                    {/* Manual Form */}
-                                    {showAddForm && (
-                                        <div className="bg-slate-50 p-3 rounded-lg border animate-fade-in">
-                                            <input className="w-full p-2 border rounded mb-2 text-sm" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
-                                            <div className="flex gap-2">
-                                                <select className="flex-1 p-2 border rounded text-sm" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
-                                                    <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
-                                                </select>
-                                                <button onClick={handleManualAdd} className="bg-indigo-600 text-white px-4 rounded font-bold text-sm">Simpan</button>
+                                    
+                                    <h3 className={`text-xl font-extrabold mb-1 ${scanResult.success ? 'text-gray-800' : 'text-red-600'}`}>
+                                        {scanResult.title}
+                                    </h3>
+                                    <p className="text-gray-500 text-sm mb-6">{scanResult.msg}</p>
+                                    
+                                    {scanResult.p && (
+                                        <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 mb-6 text-left flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold">
+                                                {scanResult.p.nama.charAt(0)}
+                                            </div>
+                                            <div>
+                                                <div className="font-bold text-gray-800">{scanResult.p.nama}</div>
+                                                <div className="text-xs text-gray-500">{scanResult.p.category} • {scanResult.time}</div>
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* Download All QR */}
+                                    <button onClick={() => setScanResult(null)} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-sm hover:bg-black transition">
+                                        TUTUP / SCAN LAGI
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
+            // 3. DATABASE & REPORT VIEW (Merged Logic)
+            if (view === 'database' || view === 'report') return (
+                <div className="min-h-screen bg-slate-50 p-4">
+                    <div className="max-w-2xl mx-auto">
+                        <button onClick={() => setView('menu')} className="mb-6 flex items-center gap-2 text-gray-500 font-bold hover:text-indigo-600 transition"><i data-lucide="arrow-left"></i> Kembali</button>
+                        
+                        <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+                            {/* Header */}
+                            <div className="p-5 border-b bg-gray-50/50 flex justify-between items-center">
+                                <div>
+                                    <h2 className="font-bold text-lg text-gray-800">{view === 'database' ? 'Database Peserta' : 'Laporan Lengkap'}</h2>
+                                    <p className="text-xs text-gray-400">{Object.keys(participants).length} Data Tersimpan</p>
+                                </div>
+                                {view === 'report' && (
+                                    <button onClick={downloadReport} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-green-700 shadow-lg shadow-green-200">
+                                        <i data-lucide="download" width="16"></i> Export CSV
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Database Actions */}
+                            {view === 'database' && (
+                                <div className="p-5 grid grid-cols-1 gap-3 bg-indigo-50/30">
+                                    <div className="relative group cursor-pointer">
+                                        <input type="file" accept=".csv" onChange={handleUploadCSV} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                                        <div className="bg-white border-2 border-dashed border-indigo-200 rounded-xl p-4 flex flex-col items-center justify-center group-hover:border-indigo-500 transition">
+                                            <i data-lucide="upload-cloud" className="text-indigo-400 mb-2"></i>
+                                            <span className="text-sm font-bold text-indigo-700">Upload File CSV</span>
+                                            <span className="text-[10px] text-gray-400">Format: Nama, Kategori</span>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Generate QR Button */}
                                     {Object.keys(participants).length > 0 && (
-                                        <button onClick={downloadAllQR} disabled={isDownloading} className={`w-full py-3 rounded-lg font-bold text-white flex items-center justify-center gap-2 transition ${isDownloading ? 'bg-slate-400' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-                                            {isDownloading ? 'Sedang Mendownload...' : <><i data-lucide="download"></i> Download Semua QR Code</>}
-                                        </button>
+                                        <a href={`https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=CONTOH`} target="_blank" className="bg-white border border-gray-200 p-4 rounded-xl flex items-center justify-between hover:bg-gray-50">
+                                            <div className="flex items-center gap-3">
+                                                <div className="bg-purple-100 text-purple-600 p-2 rounded-lg"><i data-lucide="qr-code"></i></div>
+                                                <div className="text-sm font-bold text-gray-700">Generator QR Code</div>
+                                            </div>
+                                            <i data-lucide="chevron-right" className="text-gray-400"></i>
+                                        </a>
                                     )}
                                 </div>
                             )}
 
-                            <div className="overflow-x-auto max-h-[60vh] scroller">
+                            {/* Table Data */}
+                            <div className="overflow-x-auto max-h-[60vh] hide-scroll">
                                 <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 text-slate-500 font-bold text-xs uppercase sticky top-0">
+                                    <thead className="bg-gray-50 text-gray-400 font-bold text-[10px] uppercase tracking-wider sticky top-0 z-10 shadow-sm">
                                         <tr>
-                                            <th className="p-3 bg-slate-50">Nama Peserta</th>
-                                            {view === 'report' ? SESSION_LIST.map(s => <th key={s.id} className="p-3 whitespace-nowrap bg-slate-50">{s.label.split(':')[0]}</th>) : <th className="p-3 bg-slate-50 text-right">QR Code</th>}
+                                            <th className="p-4 bg-gray-50">Nama Peserta</th>
+                                            {view === 'report' ? SESSIONS.map(s => <th key={s.id} className="p-4 bg-gray-50 whitespace-nowrap text-center">{s.title}</th>) : <th className="p-4 bg-gray-50 text-right">ID</th>}
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100">
+                                    <tbody className="divide-y divide-gray-100">
                                         {Object.values(participants).map((p, i) => (
-                                            <tr key={p.id} className="hover:bg-slate-50">
-                                                <td className="p-3 font-medium text-slate-700">
-                                                    {p.nama}
-                                                    <div className="text-[10px] text-gray-400">{p.category}</div>
+                                            <tr key={p.id} className="hover:bg-gray-50 transition">
+                                                <td className="p-4">
+                                                    <div className="font-bold text-gray-800">{p.nama}</div>
+                                                    <div className="text-xs text-indigo-500">{p.category}</div>
                                                 </td>
-                                                {view === 'report' ? SESSION_LIST.map(s => {
-                                                    const log = attendanceData[s.id]?.[p.id];
-                                                    return <td key={s.id} className="p-3 text-center">{log ? <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">OK</span> : <span className="text-gray-200">-</span>}</td>
+                                                {view === 'report' ? SESSIONS.map(s => {
+                                                    const log = attendance[s.id]?.[p.id];
+                                                    return (
+                                                        <td key={s.id} className="p-4 text-center">
+                                                            {log ? (
+                                                                <div className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-600 rounded-full">
+                                                                    <i data-lucide="check" width="12"></i>
+                                                                </div>
+                                                            ) : <span className="text-gray-200">-</span>}
+                                                        </td>
+                                                    )
                                                 }) : (
-                                                    <td className="p-3 text-right">
-                                                        <button onClick={() => downloadSingleQR(p)} className="text-indigo-600 hover:bg-indigo-50 p-2 rounded-lg" title="Download QR">
-                                                            <i data-lucide="qr-code" width="20"></i>
-                                                        </button>
-                                                    </td>
+                                                    <td className="p-4 text-right text-xs text-gray-400 font-mono">{p.id.split('-')[1]}</td>
                                                 )}
                                             </tr>
                                         ))}
