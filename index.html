@@ -96,7 +96,7 @@
           setScanResult(null);
           scanIntervalRef.current = setInterval(scanQRCode, 500);
         } catch (err) {
-          alert('Gagal akses kamera. Untuk scan, buka aplikasi ini melalui HTTPS (upload ke tiiny.host atau hosting lain) dan izinkan akses kamera.');
+          alert('Gagal mengakses kamera.\n\nSolusi:\n1. Pastikan Anda membuka aplikasi ini melalui link HTTPS (bukan file lokal).\n2. Saat popup izin kamera muncul, pilih "Izinkan".\n3. Jika tidak muncul, buka Pengaturan Browser > Izin Situs > Kamera > Izinkan untuk situs ini.');
         }
       };
 
