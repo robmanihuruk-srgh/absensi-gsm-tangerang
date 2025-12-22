@@ -1,435 +1,375 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Daftar Hadir Retreat GSM GKPS Tangerang</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retreat GSM GKPS Tangerang</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-
-  <!-- jsQR Library untuk scan QR -->
-  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-
-  <style>
-    body { font-family: 'Segoe UI', sans-serif; }
-    .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-  </style>
+    <style>
+        /* Animasi Custom */
+        @keyframes scan-line {
+            0% { top: 0; }
+            50% { top: 100%; }
+            100% { top: 0; }
+        }
+        .scan-animate {
+            animation: scan-line 2s linear infinite;
+        }
+    </style>
 </head>
 <body class="bg-gray-50">
 
-  <div id="app"></div>
+    <div id="root"></div>
 
-  <script type="text/babel">
-    const { useState, useRef, useEffect } = React;
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
 
-    // === KONFIGURASI APLIKASI (UBAH DI SINI SAJA) ===
-    const APP_CONFIG = {
-      title: "Retreat GSM GKPS Tangerang",
-      subtitle: "Gereja Kristen Protestan Simalungun",
-      location: "Tangerang",
-      eventDate: "20-22 Desember 2025",
-      categories: ["Pemuda", "Dewasa", "Lansia", "Anak", "Umum"]
-    };
+        // Komponen Utama
+        const AttendanceSystem = () => {
+            const [view, setView] = useState('menu');
+            const [participants, setParticipants] = useState([]);
+            const [attendance, setAttendance] = useState([]);
+            const [scanning, setScanning] = useState(false);
+            const [scanResult, setScanResult] = useState(null);
+            
+            // State Form Manual
+            const [showAddForm, setShowAddForm] = useState(false);
+            const [formData, setFormData] = useState({ nama: '', kategori: 'Pemuda' });
 
-    const AttendanceSystem = () => {
-      const [view, setView] = useState('menu');
-      const [participants, setParticipants] = useState([]);
-      const [attendance, setAttendance] = useState([]);
-      const [scanning, setScanning] = useState(false);
-      const [scanResult, setScanResult] = useState(null);
-      const [searchTerm, setSearchTerm] = useState('');
-      const [filterCategory, setFilterCategory] = useState('Semua');
-      const [showAddForm, setShowAddForm] = useState(false);
-      const [formData, setFormData] = useState({ nama: '', kategori: APP_CONFIG.categories[0] });
+            const videoRef = useRef(null);
+            const streamRef = useRef(null);
+            const canvasRef = useRef(null);
+            const scanIntervalRef = useRef(null);
 
-      const videoRef = useRef(null);
-      const streamRef = useRef(null);
-      const canvasRef = useRef(null);
-      const scanIntervalRef = useRef(null);
+            // Trigger Icon Lucide setiap render
+            useEffect(() => {
+                lucide.createIcons();
+            });
 
-      // Load data dari localStorage
-      useEffect(() => {
-        const participantsData = localStorage.getItem('retreat-gsm-participants');
-        const attendanceData = localStorage.getItem('retreat-gsm-attendance');
-        if (participantsData) setParticipants(JSON.parse(participantsData));
-        if (attendanceData) setAttendance(JSON.parse(attendanceData));
+            // Load Data Awal
+            useEffect(() => {
+                const savedParticipants = localStorage.getItem('retreat-participants');
+                const savedAttendance = localStorage.getItem('retreat-attendance');
+                if (savedParticipants) setParticipants(JSON.parse(savedParticipants));
+                if (savedAttendance) setAttendance(JSON.parse(savedAttendance));
+            }, []);
 
-        lucide.createIcons();
-      }, []);
+            const saveParticipants = (data) => {
+                setParticipants(data);
+                localStorage.setItem('retreat-participants', JSON.stringify(data));
+            };
 
-      const saveParticipants = (data) => localStorage.setItem('retreat-gsm-participants', JSON.stringify(data));
-      const saveAttendance = (data) => localStorage.setItem('retreat-gsm-attendance', JSON.stringify(data));
+            const saveAttendance = (data) => {
+                setAttendance(data);
+                localStorage.setItem('retreat-attendance', JSON.stringify(data));
+            };
 
-      const resetAllData = () => {
-        if (confirm('Yakin ingin menghapus SEMUA data peserta dan absensi?')) {
-          setParticipants([]);
-          setAttendance([]);
-          localStorage.removeItem('retreat-gsm-participants');
-          localStorage.removeItem('retreat-gsm-attendance');
-          alert('Semua data telah direset.');
-        }
-      };
+            const resetData = () => {
+                if (confirm('PERINGATAN: Yakin ingin menghapus SEMUA data?')) {
+                    localStorage.clear();
+                    setParticipants([]);
+                    setAttendance([]);
+                    alert('Data berhasil direset.');
+                }
+            };
 
-      const generateQRCode = (text) => {
-        const size = 250;
-        return `https://chart.googleapis.com/chart?cht=qr&chs=${size}x${size}&chl=${encodeURIComponent(text)}`;
-      };
+            const generateQRCode = (text) => {
+                return `https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(text)}`;
+            };
 
-      const handleFileUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const text = event.target.result;
-          const lines = text.split('\n').filter(l => l.trim());
-          if (lines.length < 1) return alert('File kosong atau format salah!');
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
 
-          const newParticipants = lines.slice(1).map((line, i) => {
-            const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-            const nama = cols[0] || `Peserta ${i + 1}`;
-            const kategori = cols[1] && APP_CONFIG.categories.includes(cols[1]) ? cols[1] : 'Umum';
-            return { id: `GSM-${Date.now()}-${i}`, nama, kategori };
-          }).filter(p => p.nama);
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const lines = event.target.result.split('\n').filter(line => line.trim());
+                    const newParticipants = lines.slice(1).map((line, index) => {
+                        const parts = line.split(',');
+                        const nama = parts[0]?.trim();
+                        if (!nama) return null;
+                        return {
+                            id: `RETREAT-${Date.now()}-${index}`,
+                            nama: nama,
+                            kategori: parts[1]?.trim() || 'Umum'
+                        };
+                    }).filter(Boolean);
 
-          const updated = [...participants, ...newParticipants];
-          setParticipants(updated);
-          saveParticipants(updated);
-          alert(`${newParticipants.length} peserta berhasil ditambahkan!`);
-        };
-        reader.readAsText(file);
-      };
+                    const combined = [...participants, ...newParticipants];
+                    saveParticipants(combined);
+                    alert(`${newParticipants.length} peserta berhasil dimuat!`);
+                };
+                reader.readAsText(file);
+            };
 
-      const handleManualAdd = () => {
-        if (!formData.nama.trim()) return alert('Nama wajib diisi!');
-        const newParticipant = {
-          id: `GSM-${Date.now()}`,
-          nama: formData.nama.trim(),
-          kategori: formData.kategori
-        };
-        const updated = [...participants, newParticipant];
-        setParticipants(updated);
-        saveParticipants(updated);
-        setFormData({ nama: '', kategori: APP_CONFIG.categories[0] });
-        setShowAddForm(false);
-        alert(`Peserta "${newParticipant.nama}" ditambahkan!`);
-      };
+            const handleManualAdd = () => {
+                if (!formData.nama.trim()) return alert('Nama harus diisi!');
+                const newP = { id: `RET-${Date.now()}`, nama: formData.nama, kategori: formData.kategori };
+                saveParticipants([...participants, newP]);
+                setFormData({ nama: '', kategori: 'Pemuda' });
+                setShowAddForm(false);
+                alert('Peserta ditambahkan');
+            };
 
-      const startScanning = async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-          videoRef.current.srcObject = stream;
-          streamRef.current = stream;
-          setScanning(true);
-          setScanResult(null);
-          scanIntervalRef.current = setInterval(scanQRCode, 500);
-        } catch (err) {
-          alert('Gagal akses kamera. Pastikan izin diberikan.');
-        }
-      };
+            const startScanning = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = stream;
+                        streamRef.current = stream;
+                        videoRef.current.onloadedmetadata = () => {
+                            videoRef.current.play();
+                            setScanning(true);
+                            setScanResult(null);
+                            scanIntervalRef.current = setInterval(scanQRCode, 500);
+                        };
+                    }
+                } catch (err) {
+                    alert('Gagal akses kamera. Pastikan HTTPS atau izin kamera aktif.');
+                }
+            };
 
-      const stopScanning = () => {
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach(t => t.stop());
-          streamRef.current = null;
-        }
-        if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
-        setScanning(false);
-      };
+            const stopScanning = () => {
+                if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+                if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
+                setScanning(false);
+            };
 
-      const scanQRCode = () => {
-        if (!videoRef.current || !canvasRef.current || videoRef.current.readyState !== videoRef.current.HAVE_ENOUGH_DATA) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        ctx.drawImage(videoRef.current, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
-        if (code) handleScanResult(code.data);
-      };
+            const scanQRCode = () => {
+                if (!videoRef.current || !canvasRef.current) return;
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                canvas.width = videoRef.current.videoWidth;
+                canvas.height = videoRef.current.videoHeight;
+                ctx.drawImage(videoRef.current, 0, 0);
+                
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                if (code) handleScanResult(code.data);
+            };
 
-      const handleScanResult = (qrData) => {
-        stopScanning();
-        const participant = participants.find(p => p.id === qrData);
-        if (!participant) {
-          setScanResult({ success: false, message: 'QR tidak valid / peserta tidak terdaftar!' });
-          return;
-        }
-        if (attendance.find(a => a.id === qrData)) {
-          setScanResult({ success: false, message: `${participant.nama} sudah check-in sebelumnya!`, participant });
-          return;
-        }
-        const newRecord = {
-          id: participant.id,
-          nama: participant.nama,
-          kategori: participant.kategori,
-          timestamp: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'medium' })
-        };
-        const updated = [...attendance, newRecord];
-        setAttendance(updated);
-        saveAttendance(updated);
-        setScanResult({ success: true, message: 'Check-in berhasil!', participant, timestamp: newRecord.timestamp });
-      };
+            const handleScanResult = (qrData) => {
+                stopScanning();
+                const p = participants.find(x => x.id === qrData);
+                
+                if (!p) {
+                    setScanResult({ success: false, message: 'QR Tidak Dikenali' });
+                    return;
+                }
 
-      const exportToCSV = () => {
-        const headers = 'No,Nama,Kategori,Waktu Check-in\n';
-        const rows = attendance.map((a, i) => `${i+1},${a.nama},${a.kategori},"${a.timestamp}"`).join('\n');
-        const csv = headers + rows;
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Absensi_Retreat_GSM_GKPS_${new Date().toISOString().slice(0,10)}.csv`;
-        a.click();
-      };
+                const exist = attendance.find(x => x.id === qrData);
+                if (exist) {
+                    setScanResult({ success: false, message: 'Sudah Check-in Sebelumnya', p, timestamp: exist.timestamp });
+                    return;
+                }
 
-      const downloadAllQR = () => {
-        if (!participants.length) return alert('Belum ada peserta!');
-        participants.forEach((p, i) => {
-          setTimeout(() => {
-            const a = document.createElement('a');
-            a.href = generateQRCode(p.id);
-            a.download = `QR_${p.nama.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-            a.click();
-          }, i * 300);
-        });
-        alert('Sedang mengunduh semua QR... tunggu hingga selesai.');
-      };
+                const newAtt = { ...p, timestamp: new Date().toLocaleString('id-ID') };
+                saveAttendance([...attendance, newAtt]);
+                setScanResult({ success: true, message: 'Check-in Berhasil', p, timestamp: newAtt.timestamp });
+            };
 
-      const statsByCategory = APP_CONFIG.categories.reduce((acc, cat) => {
-        acc[cat] = {
-          total: participants.filter(p => p.kategori === cat).length,
-          present: attendance.filter(a => a.kategori === cat).length
-        };
-        return acc;
-      }, {});
+            const exportToCSV = () => {
+                const headers = ['No,ID,Nama,Kategori,Waktu'];
+                const rows = attendance.map((a, i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.timestamp}"`);
+                const blob = new Blob([[headers, ...rows].join('\n')], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Absensi_Retreat.csv';
+                a.click();
+            };
 
-      const filteredAttendance = attendance.filter(a => {
-        const matchSearch = a.nama.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchCat = filterCategory === 'Semua' || a.kategori === filterCategory;
-        return matchSearch && matchCat;
-      });
+            const downloadAllQR = () => {
+                let delay = 0;
+                participants.forEach(p => {
+                    setTimeout(() => {
+                        const a = document.createElement('a');
+                        a.href = generateQRCode(p.id);
+                        a.download = `QR_${p.nama}.png`;
+                        a.click();
+                    }, delay += 500);
+                });
+                alert('Download dimulai...');
+            };
 
-      // Render Views
-      const Menu = () => (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
-          <div className="max-w-md mx-auto">
-            <div className="bg-white rounded-3xl shadow-2xl p-8 text-center mb-8">
-              <h1 className="text-4xl font-bold text-indigo-700 mb-2">{APP_CONFIG.title}</h1>
-              <p className="text-lg text-gray-600">{APP_CONFIG.subtitle}</p>
-              <p className="text-md text-gray-500 mt-3">📍 {APP_CONFIG.location}</p>
-              <p className="text-md text-gray-500 flex items-center justify-center gap-2 mt-2">
-                <i data-lucide="calendar"></i> {APP_CONFIG.eventDate}
-              </p>
-              <div className="mt-8 grid grid-cols-2 gap-4">
-                <div className="bg-blue-50 p-4 rounded-xl"><p className="text-3xl font-bold text-blue-600">{participants.length}</p><p className="text-gray-600">Total Peserta</p></div>
-                <div className="bg-green-50 p-4 rounded-xl"><p className="text-3xl font-bold text-green-600">{attendance.length}</p><p className="text-gray-600">Sudah Hadir</p></div>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <button onClick={() => setView('generate')} className="w-full bg-indigo-600 text-white p-5 rounded-2xl shadow-lg flex items-center justify-center gap-4 text-lg font-semibold hover:bg-indigo-700">
-                <i data-lucide="qr-code" className="w-7 h-7"></i> Generate QR Code
-              </button>
-              <button onClick={() => setView('scan')} className="w-full bg-green-600 text-white p-5 rounded-2xl shadow-lg flex items-center justify-center gap-4 text-lg font-semibold hover:bg-green-700">
-                <i data-lucide="camera" className="w-7 h-7"></i> Scan Kehadiran
-              </button>
-              <button onClick={() => setView('report')} className="w-full bg-orange-600 text-white p-5 rounded-2xl shadow-lg flex items-center justify-center gap-4 text-lg font-semibold hover:bg-orange-700">
-                <i data-lucide="users" className="w-7 h-7"></i> Laporan Kehadiran
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-
-      const Generate = () => (
-        <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 p-6">
-          <div className="max-w-5xl mx-auto">
-            <button onClick={() => setView('menu')} className="mb-6 px-5 py-3 bg-gray-700 text-white rounded-xl flex items-center gap-2 hover:bg-gray-800">
-              <i data-lucide="arrow-left"></i> Kembali
-            </button>
-            <div className="bg-white rounded-3xl shadow-2xl p-8">
-              <h2 className="text-3xl font-bold text-indigo-700 mb-6">Generate QR Code Peserta</h2>
-              <div className="grid md:grid-cols-2 gap-8 mb-8">
-                <div className="border-2 border-dashed border-indigo-300 rounded-xl p-8 text-center">
-                  <i data-lucide="upload" className="w-12 h-12 mx-auto text-indigo-500 mb-4"></i>
-                  <input type="file" accept=".csv" onChange={handleFileUpload} className="block w-full text-sm file:mr-4 file:py-3 file:px-6 file:rounded-full file:bg-indigo-600 file:text-white" />
-                  <p className="text-sm text-gray-500 mt-3">Format CSV: Nama,Kategori</p>
-                </div>
-                <div className="space-y-4">
-                  <button onClick={() => setShowAddForm(!showAddForm)} className="w-full bg-blue-600 text-white py-4 rounded-xl font-semibold hover:bg-blue-700">
-                    {showAddForm ? '✕ Tutup Form' : '+ Tambah Manual'}
-                  </button>
-                  {showAddForm && (
-                    <div className="bg-blue-50 p-6 rounded-xl space-y-4">
-                      <input type="text" placeholder="Nama lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} className="w-full px-4 py-3 border rounded-lg" />
-                      <select value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})} className="w-full px-4 py-3 border rounded-lg">
-                        {APP_CONFIG.categories.map(c => <option key={c}>{c}</option>)}
-                      </select>
-                      <button onClick={handleManualAdd} className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700">Simpan</button>
+            // --- TAMPILAN (VIEWS) ---
+            
+            if (view === 'menu') return (
+                <div className="min-h-screen bg-blue-50 p-4 pt-10">
+                    <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 text-center">
+                        <h1 className="text-2xl font-bold text-indigo-800">Retreat GSM GKPS</h1>
+                        <p className="text-gray-500 mb-6">Tangerang</p>
+                        <div className="flex justify-center gap-4 mb-8">
+                            <div className="bg-blue-100 p-2 rounded w-1/2">
+                                <span className="block text-xs text-blue-600">Peserta</span>
+                                <span className="text-xl font-bold text-blue-800">{participants.length}</span>
+                            </div>
+                            <div className="bg-green-100 p-2 rounded w-1/2">
+                                <span className="block text-xs text-green-600">Hadir</span>
+                                <span className="text-xl font-bold text-green-800">{attendance.length}</span>
+                            </div>
+                        </div>
+                        <button onClick={() => setView('generate')} className="w-full bg-indigo-600 text-white p-4 rounded-xl mb-3 flex items-center justify-center gap-2 shadow hover:bg-indigo-700">
+                            <i data-lucide="qr-code"></i> Database & QR
+                        </button>
+                        <button onClick={() => setView('scan')} className="w-full bg-green-600 text-white p-4 rounded-xl mb-3 flex items-center justify-center gap-2 shadow hover:bg-green-700">
+                            <i data-lucide="camera"></i> Scan Kehadiran
+                        </button>
+                        <button onClick={() => setView('report')} className="w-full bg-white border border-gray-200 text-gray-700 p-4 rounded-xl flex items-center justify-center gap-2 shadow hover:bg-gray-50">
+                            <i data-lucide="file-text"></i> Laporan
+                        </button>
+                        <button onClick={resetData} className="mt-6 text-xs text-red-400 flex items-center justify-center gap-1 mx-auto">
+                            <i data-lucide="trash-2" width="12"></i> Reset Data
+                        </button>
                     </div>
-                  )}
                 </div>
-              </div>
-              {participants.length > 0 && (
-                <div className="flex justify-between items-center mb-6">
-                  <p className="text-lg font-semibold">Total: {participants.length} peserta</p>
-                  <button onClick={downloadAllQR} className="bg-green-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-green-700">
-                    <i data-lucide="download"></i> Download Semua QR
-                  </button>
-                </div>
-              )}
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                {participants.map(p => (
-                  <div key={p.id} className="bg-gray-50 rounded-xl p-5 text-center shadow hover:shadow-lg">
-                    <img src={generateQRCode(p.id)} alt="QR" className="mx-auto mb-3" />
-                    <p className="font-bold">{p.nama}</p>
-                    <p className="text-sm bg-gray-200 inline-block px-3 py-1 rounded-full mt-2">{p.kategori}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
+            );
 
-      const Scanner = () => (
-        <div className="min-h-screen bg-gradient-to-br from-green-50 to-teal-100 p-6">
-          <div className="max-w-lg mx-auto">
-            <button onClick={() => { stopScanning(); setView('menu'); }} className="mb-6 px-5 py-3 bg-gray-700 text-white rounded-xl flex items-center gap-2 hover:bg-gray-800">
-              <i data-lucide="arrow-left"></i> Kembali
-            </button>
-            <div className="bg-white rounded-3xl shadow-2xl p-8">
-              <h2 className="text-3xl font-bold text-green-700 text-center mb-8">Scan QR Code Kehadiran</h2>
-              {!scanning && !scanResult && (
-                <button onClick={startScanning} className="w-full bg-green-600 text-white py-6 rounded-2xl text-xl font-bold flex items-center justify-center gap-4 hover:bg-green-700">
-                  <i data-lucide="camera" className="w-8 h-8"></i> Mulai Scanning
-                </button>
-              )}
-              {scanning && (
-                <div className="text-center">
-                  <div className="relative inline-block">
-                    <video ref={videoRef} autoPlay playsInline className="w-full rounded-2xl shadow-lg"></video>
-                    <div className="absolute inset-0 border-4 border-green-500 rounded-2xl animate-pulse pointer-events-none"></div>
-                  </div>
-                  <canvas ref={canvasRef} className="hidden"></canvas>
-                  <button onClick={stopScanning} className="mt-6 w-full bg-red-600 text-white py-4 rounded-xl font-bold hover:bg-red-700">Stop</button>
-                </div>
-              )}
-              {scanResult && (
-                <div className={`p-8 rounded-2xl text-center ${scanResult.success ? 'bg-green-50 border-4 border-green-500' : 'bg-red-50 border-4 border-red-500'}`}>
-                  {scanResult.success ? <i data-lucide="check-circle" className="w-20 h-20 mx-auto text-green-600 mb-4"></i> : <i data-lucide="x-circle" className="w-20 h-20 mx-auto text-red-600 mb-4"></i>}
-                  <p className={`text-2xl font-bold mb-4 ${scanResult.success ? 'text-green-700' : 'text-red-700'}`}>{scanResult.message}</p>
-                  {scanResult.participant && (
-                    <div className="bg-white rounded-xl p-6 shadow">
-                      <p className="text-xl font-bold">{scanResult.participant.nama}</p>
-                      <p className="text-gray-600">{scanResult.participant.kategori}</p>
-                      {scanResult.timestamp && <p className="text-sm text-gray-500 mt-3">{scanResult.timestamp}</p>}
+            if (view === 'generate') return (
+                <div className="min-h-screen bg-purple-50 p-4">
+                    <div className="max-w-md mx-auto">
+                        <button onClick={() => setView('menu')} className="mb-4 flex items-center gap-2 text-gray-600"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <div className="bg-white p-6 rounded-xl shadow">
+                            <h2 className="text-xl font-bold text-purple-800 mb-4">Data Peserta</h2>
+                            
+                            <div className="mb-4 p-4 border-2 border-dashed rounded-lg text-center">
+                                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv" />
+                                <label htmlFor="csv" className="cursor-pointer text-purple-600 font-bold block">
+                                    <i data-lucide="upload" className="mx-auto mb-1"></i> Upload CSV
+                                </label>
+                                <p className="text-xs text-gray-400">Format: Nama,Kategori</p>
+                            </div>
+
+                            <button onClick={() => setShowAddForm(!showAddForm)} className="text-sm text-purple-600 font-bold mb-3 block">+ Input Manual</button>
+                            
+                            {showAddForm && (
+                                <div className="bg-gray-50 p-3 rounded mb-4">
+                                    <input placeholder="Nama" className="w-full p-2 border rounded mb-2" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
+                                    <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
+                                        <option>Anak SM</option><option>GSM</option><option>Panitia</option><option>Umum</option>
+                                    </select>
+                                    <button onClick={handleManualAdd} className="w-full bg-purple-600 text-white py-2 rounded">Simpan</button>
+                                </div>
+                            )}
+
+                            {participants.length > 0 && (
+                                <button onClick={downloadAllQR} className="w-full bg-green-500 text-white py-2 rounded mb-6 font-bold flex items-center justify-center gap-2">
+                                    <i data-lucide="download"></i> Download Semua QR
+                                </button>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3">
+                                {participants.map(p => (
+                                    <div key={p.id} className="border p-2 rounded text-center bg-gray-50">
+                                        <img src={generateQRCode(p.id)} className="w-20 mx-auto" />
+                                        <p className="font-bold text-xs truncate mt-1">{p.nama}</p>
+                                        <p className="text-[10px] text-gray-500">{p.kategori}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </div>
-                  )}
-                  <button onClick={() => { setScanResult(null); startScanning(); }} className="mt-6 w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700">
-                    Scan Lagi
-                  </button>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      );
+            );
 
-      const Report = () => (
-        <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 p-6">
-          <div className="max-w-6xl mx-auto">
-            <div className="flex justify-between mb-6">
-              <button onClick={() => setView('menu')} className="px-5 py-3 bg-gray-700 text-white rounded-xl flex items-center gap-2 hover:bg-gray-800">
-                <i data-lucide="arrow-left"></i> Kembali
-              </button>
-              <button onClick={resetAllData} className="px-5 py-3 bg-red-600 text-white rounded-xl flex items-center gap-2 hover:bg-red-700">
-                <i data-lucide="refresh-cw"></i> Reset Data
-              </button>
-            </div>
-            <div className="bg-white rounded-3xl shadow-2xl p-8">
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-3xl font-bold text-orange-700">Laporan Kehadiran</h2>
-                <button onClick={exportToCSV} className="bg-green-600 text-white px-6 py-3 rounded-xl flex items-center gap-3 hover:bg-green-700">
-                  <i data-lucide="download"></i> Export CSV
-                </button>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                <div className="bg-blue-50 p-6 rounded-2xl text-center"><p className="text-4xl font-bold text-blue-600">{participants.length}</p><p>Total Peserta</p></div>
-                <div className="bg-green-50 p-6 rounded-2xl text-center"><p className="text-4xl font-bold text-green-600">{attendance.length}</p><p>Sudah Hadir</p></div>
-                <div className="bg-red-50 p-6 rounded-2xl text-center"><p className="text-4xl font-bold text-red-600">{participants.length - attendance.length}</p><p>Belum Hadir</p></div>
-                <div className="bg-purple-50 p-6 rounded-2xl text-center"><p className="text-4xl font-bold text-purple-600">{participants.length ? Math.round((attendance.length / participants.length) * 100) : 0}%</p><p>Tingkat Kehadiran</p></div>
-              </div>
-              <div className="mb-8">
-                <h3 className="text-xl font-bold mb-4">Statistik per Kategori</h3>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                  {APP_CONFIG.categories.map(cat => {
-                    const s = statsByCategory[cat] || {total:0, present:0};
-                    return <div key={cat} className="bg-gray-50 p-4 rounded-xl text-center"><p className="font-semibold">{cat}</p><p className="text-2xl font-bold text-indigo-600">{s.present}/{s.total}</p></div>
-                  })}
+            if (view === 'scan') return (
+                <div className="min-h-screen bg-black flex flex-col text-white">
+                    <div className="p-4 flex justify-between items-center bg-gray-900">
+                        <button onClick={() => { stopScanning(); setView('menu'); }} className="flex gap-2"><i data-lucide="arrow-left"></i> Menu</button>
+                        <span className="font-bold">Scanner</span>
+                        <div className="w-8"></div>
+                    </div>
+                    <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
+                        {!scanning && !scanResult && (
+                            <button onClick={startScanning} className="bg-green-600 px-8 py-3 rounded-full font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)]">
+                                MULAI SCAN
+                            </button>
+                        )}
+                        <video ref={videoRef} className={`absolute w-full h-full object-cover ${scanning ? 'opacity-100' : 'opacity-0'}`} playsInline muted></video>
+                        <canvas ref={canvasRef} className="hidden"></canvas>
+                        
+                        {scanning && (
+                            <div className="absolute w-64 h-64 border-2 border-green-500 rounded-lg">
+                                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-green-500 -mt-1 -ml-1"></div>
+                                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-green-500 -mb-1 -mr-1"></div>
+                                <div className="absolute w-full h-0.5 bg-green-500 scan-animate shadow-[0_0_10px_lime]"></div>
+                            </div>
+                        )}
+
+                        {scanResult && (
+                            <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
+                                <div className="bg-white text-gray-800 p-6 rounded-2xl w-full max-w-sm text-center">
+                                    <div className="flex justify-center mb-4">
+                                        {scanResult.success ? 
+                                            <i data-lucide="check-circle" className="text-green-500 w-16 h-16"></i> : 
+                                            <i data-lucide="x-circle" className="text-red-500 w-16 h-16"></i>
+                                        }
+                                    </div>
+                                    <h3 className={`text-2xl font-bold mb-2 ${scanResult.success ? 'text-green-700' : 'text-red-700'}`}>
+                                        {scanResult.success ? 'BERHASIL' : 'GAGAL'}
+                                    </h3>
+                                    <p className="mb-4 font-medium">{scanResult.message}</p>
+                                    
+                                    {scanResult.p && (
+                                        <div className="bg-gray-100 p-3 rounded-lg mb-4">
+                                            <p className="text-xl font-bold">{scanResult.p.nama}</p>
+                                            <p className="text-sm text-gray-500">{scanResult.p.kategori}</p>
+                                            <p className="text-xs text-gray-400 mt-2">{scanResult.timestamp}</p>
+                                        </div>
+                                    )}
+                                    <button onClick={() => { setScanResult(null); startScanning(); }} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">
+                                        Scan Lagi
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-              </div>
-              <div className="flex flex-col md:flex-row gap-4 mb-6">
-                <div className="flex-1 relative">
-                  <i data-lucide="search" className="absolute left-3 top-4 text-gray-400 w-5 h-5"></i>
-                  <input type="text" placeholder="Cari nama..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-3 border rounded-xl" />
+            );
+
+            if (view === 'report') return (
+                <div className="min-h-screen bg-orange-50 p-4">
+                    <div className="max-w-md mx-auto bg-white rounded-xl shadow p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <button onClick={() => setView('menu')}><i data-lucide="arrow-left"></i></button>
+                            <h2 className="font-bold text-lg">Laporan</h2>
+                            <button onClick={exportToCSV} className="text-green-600"><i data-lucide="download"></i> CSV</button>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-gray-100 text-xs uppercase">
+                                    <tr><th className="p-2">No</th><th className="p-2">Nama</th><th className="p-2">Waktu</th></tr>
+                                </thead>
+                                <tbody>
+                                    {attendance.map((a, i) => (
+                                        <tr key={i} className="border-b">
+                                            <td className="p-2">{i+1}</td>
+                                            <td className="p-2 font-medium">
+                                                {a.nama} <br/><span className="text-[10px] text-gray-500">{a.kategori}</span>
+                                            </td>
+                                            <td className="p-2 text-xs text-gray-500">{a.timestamp}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
-                <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-6 py-3 border rounded-xl">
-                  <option>Semua Kategori</option>
-                  {APP_CONFIG.categories.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-orange-100">
-                    <tr><th className="px-6 py-4">No</th><th className="px-6 py-4">Nama</th><th className="px-6 py-4">Kategori</th><th className="px-6 py-4">Waktu Check-in</th></tr>
-                  </thead>
-                  <tbody>
-                    {filteredAttendance.length === 0 ? (
-                      <tr><td colSpan="4" className="text-center py-8 text-gray-500">Tidak ada data</td></tr>
-                    ) : (
-                      filteredAttendance.map((a, i) => (
-                        <tr key={a.id} className="border-b hover:bg-orange-50">
-                          <td className="px-6 py-4">{i+1}</td>
-                          <td className="px-6 py-4 font-semibold">{a.nama}</td>
-                          <td className="px-6 py-4"><span className="bg-orange-100 px-3 py-1 rounded-full text-sm">{a.kategori}</span></td>
-                          <td className="px-6 py-4 text-gray-600">{a.timestamp}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
+            );
+        };
 
-      return (
-        <>
-          {view === 'menu' && <Menu />}
-          {view === 'generate' && <Generate />}
-          {view === 'scan' && <Scanner />}
-          {view === 'report' && <Report />}
-        </>
-      );
-    };
-
-    const root = ReactDOM.createRoot(document.getElementById('app'));
-    root.render(<AttendanceSystem />);
-  </script>
-
-  <!-- React & Babel CDN -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script type="text/babel" data-type="module">
-    lucide.createIcons();
-  </script>
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AttendanceSystem />);
+    </script>
 </body>
 </html>
