@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Retreat GSM GKPS - Secure System</title>
+    <title>Retreat GSM GKPS - Secure Admin</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -15,23 +15,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #F3F4F6; -webkit-tap-highlight-color: transparent; }
-        
-        /* Animations */
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes pulse-soft { 0% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(79, 70, 229, 0); } 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); } }
-        
-        .animate-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
-        .btn-pulse { animation: pulse-soft 2s infinite; }
-        
         .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.5); }
         .hide-scroll::-webkit-scrollbar { display: none; }
-        
-        /* Admin Button Styles */
         .admin-btn { @apply p-2 rounded-lg flex items-center justify-center transition-all shadow-sm border border-gray-100; }
-        .admin-btn-move { @apply bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white; }
-        .admin-btn-del { @apply bg-red-50 text-red-600 hover:bg-red-600 hover:text-white; }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 
     <script type="module">
@@ -52,7 +40,6 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // Bind to Window
         window.db = db; window.dbRef = ref; window.dbSet = set; window.dbPush = push; window.dbOnValue = onValue; window.dbRemove = remove; window.dbUpdate = update;
     </script>
 </head>
@@ -61,9 +48,8 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useRef } = React;
 
-        // Default Sessions
         const DEFAULT_SESSIONS = [
             { id: 'registrasi_awal', title: 'Registrasi Awal', desc: 'Check-in Kedatangan', icon: 'user-check', color: 'blue', order: 0 },
             { id: 'sesi_1', title: 'Sesi 1', desc: 'Pembukaan', icon: 'book-open', color: 'indigo', order: 1 },
@@ -71,49 +57,51 @@
         ];
 
         const App = () => {
-            // State
+            // STATE UTAMA
             const [view, setView] = useState('menu');
+            const [userRole, setUserRole] = useState('guest'); // 'guest', 'admin', 'scanner'
             const [sessions, setSessions] = useState([]);
             const [activeSession, setActiveSession] = useState(null);
             
-            // ROLE MANAGEMENT: 'guest', 'scanner', 'admin'
-            const [userRole, setUserRole] = useState('guest'); 
-            
+            // DATA & UI
             const [participants, setParticipants] = useState({});
             const [attendance, setAttendance] = useState({});
             const [isConnected, setIsConnected] = useState(false);
+            const [loading, setLoading] = useState(true);
             
+            // MODALS & INPUTS
             const [scanResult, setScanResult] = useState(null);
             const [manualMode, setManualMode] = useState(false);
             const [searchQuery, setSearchQuery] = useState("");
             const [isDownloading, setIsDownloading] = useState(false);
-            
             const [showAddSession, setShowAddSession] = useState(false);
             const [newSessionData, setNewSessionData] = useState({ title: '', desc: '' });
             
             const scannerRef = useRef(null);
 
-            // --- SYNC FIREBASE ---
+            // --- 1. INISIALISASI FIREBASE ---
             useEffect(() => {
-                lucide.createIcons();
                 const initFirebase = setTimeout(() => {
                     if (!window.db) return;
                     setIsConnected(true);
                     
-                    // 1. Sync Sessions
-                    const sessionRef = window.dbRef(window.db, 'config/sessions');
-                    window.dbOnValue(sessionRef, (snap) => {
+                    // Load Sessions
+                    window.dbOnValue(window.dbRef(window.db, 'config/sessions'), (snap) => {
                         const val = snap.val();
                         if (val) {
-                            let sessionList = Object.values(val);
-                            sessionList.sort((a, b) => (a.order || 0) - (b.order || 0));
-                            setSessions(sessionList);
-                            if (!activeSession && sessionList.length > 0) setActiveSession(sessionList[0]);
+                            let list = Object.values(val);
+                            list.sort((a, b) => (a.order || 0) - (b.order || 0));
+                            setSessions(list);
+                            // Auto select first session
+                            if (!activeSession && list.length > 0) setActiveSession(list[0]);
                         } else {
+                            // Seed jika kosong
                             DEFAULT_SESSIONS.forEach(s => window.dbSet(window.dbRef(window.db, `config/sessions/${s.id}`), s));
                         }
+                        setLoading(false);
                     });
 
+                    // Load Data Lain
                     window.dbOnValue(window.dbRef(window.db, 'participants'), (snap) => setParticipants(snap.val() || {}));
                     window.dbOnValue(window.dbRef(window.db, 'attendance'), (snap) => setAttendance(snap.val() || {}));
 
@@ -121,246 +109,205 @@
                 return () => clearTimeout(initFirebase);
             }, []);
 
-            useEffect(() => { lucide.createIcons(); }, [view, sessions, activeSession, manualMode, scanResult, userRole]);
+            // Update Icon
+            useEffect(() => { lucide.createIcons(); }, [view, sessions, userRole, scanResult]);
 
-            // --- AUTH & ROLE FUNCTIONS ---
+            // --- 2. AUTH & SECURITY ---
             const handleLogin = () => {
-                if (userRole !== 'guest') {
-                    // Logout Logic
-                    if(confirm("Logout dari sistem?")) {
-                        setUserRole('guest');
-                        setView('menu');
-                    }
-                } else {
-                    // Login Logic
-                    const pass = prompt("MASUKKAN PASSWORD:\n• Kode Petugas (Scan Only)\n• Kode Administrator (Full Access)");
-                    if (pass === "GKPS2025") {
-                        setUserRole('admin');
-                        alert("LOGIN BERHASIL: MODE ADMINISTRATOR\nAkses Penuh Aktif.");
-                    } else if (pass === "SCAN2025") {
-                        setUserRole('scanner');
-                        alert("LOGIN BERHASIL: MODE PETUGAS SCAN\nMenu Database disembunyikan.");
-                    } else if (pass) {
-                        alert("Password Salah!");
-                    }
-                }
-            };
-
-            const resetDatabase = () => {
-                const pass = prompt("PERINGATAN BAHAYA:\nIni akan MENGHAPUS SEMUA DATA Peserta dan Absensi di Cloud.\n\nMasukkan Password Admin untuk Konfirmasi:");
+                const pass = prompt("Masukkan Password:\n(GKPS2025 = Admin, SCAN2025 = Petugas)");
                 if (pass === "GKPS2025") {
-                    window.dbRemove(window.dbRef(window.db, 'participants'));
-                    window.dbRemove(window.dbRef(window.db, 'attendance'));
-                    alert("SYSTEM RESET: Database telah dikosongkan.");
-                    window.location.reload();
+                    setUserRole('admin');
+                    alert("Login Admin Berhasil!");
+                } else if (pass === "SCAN2025") {
+                    setUserRole('scanner');
+                    alert("Login Petugas Berhasil!");
                 } else if (pass) {
                     alert("Password Salah!");
                 }
             };
 
-            // --- SESSION MANAGEMENT ---
+            const handleLogout = () => {
+                if(confirm("Keluar dari sistem?")) setUserRole('guest');
+            };
+
+            const resetDatabase = () => {
+                const pass = prompt("HAPUS SEMUA DATA? Masukkan Password Admin:");
+                if (pass === "GKPS2025") {
+                    window.dbRemove(window.dbRef(window.db, 'participants'));
+                    window.dbRemove(window.dbRef(window.db, 'attendance'));
+                    alert("Database Reset Berhasil.");
+                    window.location.reload();
+                } else if (pass) {
+                    alert("Gagal.");
+                }
+            };
+
+            // --- 3. SESSION MANAGEMENT (ADMIN) ---
             const handleAddSession = () => {
-                if (!newSessionData.title) return alert("Nama Sesi Wajib Diisi!");
+                if (!newSessionData.title) return alert("Isi nama sesi!");
                 const id = `sess_${Date.now()}`;
-                const newOrder = sessions.length > 0 ? (sessions[sessions.length - 1].order || 0) + 1 : 0;
+                const order = sessions.length > 0 ? (sessions[sessions.length-1].order || 0) + 1 : 0;
                 
-                const newSession = {
-                    id: id, title: newSessionData.title, desc: newSessionData.desc || 'Kegiatan Tambahan',
-                    icon: 'calendar', color: 'orange', order: newOrder
-                };
-                window.dbSet(window.dbRef(window.db, `config/sessions/${id}`), newSession)
-                    .then(() => { setShowAddSession(false); setNewSessionData({ title: '', desc: '' }); });
+                const newSess = { id, title: newSessionData.title, desc: newSessionData.desc, icon: 'calendar', color: 'orange', order };
+                window.dbSet(window.dbRef(window.db, `config/sessions/${id}`), newSess)
+                    .then(() => { setShowAddSession(false); setNewSessionData({title:'', desc:''}); });
             };
 
-            const handleDeleteSession = (sessId, sessTitle) => {
-                if (confirm(`Hapus sesi "${sessTitle}"?`)) window.dbRemove(window.dbRef(window.db, `config/sessions/${sessId}`));
+            const handleDeleteSession = (id, title) => {
+                if(confirm(`Hapus sesi "${title}"?`)) window.dbRemove(window.dbRef(window.db, `config/sessions/${id}`));
             };
 
-            const moveSession = (index, direction) => {
-                const newSessions = [...sessions];
-                if (direction === 'up' && index > 0) {
-                    [newSessions[index], newSessions[index - 1]] = [newSessions[index - 1], newSessions[index]];
-                } else if (direction === 'down' && index < newSessions.length - 1) {
-                    [newSessions[index], newSessions[index + 1]] = [newSessions[index + 1], newSessions[index]];
-                } else { return; }
+            const moveSession = (idx, dir) => {
+                const newArr = [...sessions];
+                if (dir === 'up' && idx > 0) [newArr[idx], newArr[idx-1]] = [newArr[idx-1], newArr[idx]];
+                else if (dir === 'down' && idx < newArr.length-1) [newArr[idx], newArr[idx+1]] = [newArr[idx+1], newArr[idx]];
+                else return;
 
                 const updates = {};
-                newSessions.forEach((s, i) => { updates[`config/sessions/${s.id}/order`] = i; });
+                newArr.forEach((s, i) => updates[`config/sessions/${s.id}/order`] = i);
                 window.dbUpdate(window.dbRef(window.db), updates);
             };
 
-            // --- QR & DATA ---
-            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(id)}&margin=10`;
-
-            const downloadAllQR = async () => {
-                const pList = Object.values(participants);
-                if (pList.length === 0) return alert("Data peserta kosong!");
-                setIsDownloading(true);
-                alert("Memulai Download... Mohon tunggu.");
-                for (const p of pList) {
-                    try {
-                        const response = await fetch(generateQRUrl(p.id));
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-                        await new Promise(r => setTimeout(r, 400));
-                    } catch (e) {}
-                }
-                setIsDownloading(false);
-                alert("Selesai!");
-            };
-
-            // --- SCAN LOGIC ---
+            // --- 4. SCANNER & DATA LOGIC ---
             const processCheckIn = (qrId) => {
                 const p = participants[qrId];
                 if (!p) return setScanResult({ success: false, title: 'GAGAL', msg: 'QR Tidak Dikenali' });
-                if (!activeSession) return alert("Pilih Sesi!");
+                if (!activeSession) return alert("Pilih sesi dulu!");
 
-                const sessionLog = attendance[activeSession.id] || {};
-                if (sessionLog[qrId]) {
-                    setScanResult({ success: false, title: 'SUDAH ADA', msg: `${p.nama} sudah check-in.`, p });
-                    return;
-                }
+                const log = attendance[activeSession.id] || {};
+                if (log[qrId]) return setScanResult({ success: false, title: 'SUDAH ADA', msg: 'Sudah Check-in sebelumnya', p });
+
                 const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
                 window.dbSet(window.dbRef(window.db, `attendance/${activeSession.id}/${qrId}`), {
-                    timestamp, name: p.nama, category: p.category, device: userRole === 'admin' ? 'Admin Device' : 'Scanner Device'
+                    timestamp, name: p.nama, category: p.category, device: userRole
                 });
                 setScanResult({ success: true, title: 'BERHASIL', msg: `Selamat Datang, ${p.nama}`, p, time: timestamp });
             };
 
             const startScanner = () => {
-                if (scannerRef.current) scannerRef.current.clear().catch(()=>{});
+                if(scannerRef.current) scannerRef.current.clear().catch(()=>{});
                 const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, aspectRatio: 1.0 }, false);
-                scanner.render((txt) => { scanner.pause(); processCheckIn(txt); }, (err) => {});
+                scanner.render((txt) => { scanner.pause(); processCheckIn(txt); }, ()=>{});
                 scannerRef.current = scanner;
             };
 
             useEffect(() => {
-                if (view === 'scan' && !manualMode && !scanResult) {
+                if(view === 'scan' && !manualMode && !scanResult) {
                     const t = setTimeout(startScanner, 500);
                     return () => { clearTimeout(t); if(scannerRef.current) scannerRef.current.clear().catch(()=>{}); };
                 }
             }, [view, manualMode, scanResult]);
 
-            // --- CSV & REPORT ---
+            // --- 5. QR & CSV ---
+            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(id)}&margin=10`;
+            
+            const downloadAllQR = async () => {
+                const list = Object.values(participants);
+                if(list.length === 0) return alert("Data kosong");
+                setIsDownloading(true); alert("Mulai download...");
+                for (const p of list) {
+                    try {
+                        const res = await fetch(generateQRUrl(p.id));
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = `QR_${p.nama}.png`;
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+                        await new Promise(r => setTimeout(r, 400));
+                    } catch(e){}
+                }
+                setIsDownloading(false); alert("Selesai!");
+            };
+
             const handleUploadCSV = (e) => {
                 const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
+                if(!file) return;
+                const r = new FileReader();
+                r.onload = (ev) => {
                     const lines = ev.target.result.split('\n').slice(1);
                     let count = 0;
-                    lines.forEach((line, idx) => {
-                        const [nama, kategori] = line.split(',');
-                        if (nama && nama.trim()) {
+                    lines.forEach((l, idx) => {
+                        const [n, c] = l.split(',');
+                        if(n && n.trim()) {
                             const id = `GSM-${Date.now()}-${idx}`;
-                            window.dbSet(window.dbRef(window.db, `participants/${id}`), { id, nama: nama.trim(), category: kategori ? kategori.trim() : 'Umum' });
+                            window.dbSet(window.dbRef(window.db, `participants/${id}`), {id, nama: n.trim(), category: c?c.trim():'Umum'});
                             count++;
                         }
                     });
-                    alert(`Import ${count} data berhasil!`);
+                    alert(`Import ${count} data berhasil.`);
                 };
-                reader.readAsText(file);
+                r.readAsText(file);
             };
 
-            const downloadReport = () => {
-                let csv = 'No,ID,Nama,Kategori';
-                sessions.forEach(s => csv += `,${s.title}`);
-                csv += '\n';
-                Object.values(participants).forEach((p, i) => {
-                    let row = `${i+1},${p.id},"${p.nama}",${p.category}`;
-                    sessions.forEach(s => {
-                        const log = attendance[s.id]?.[p.id];
-                        row += `,${log ? log.timestamp.replace(',', '') : '-'}`;
-                    });
-                    csv += `\n${row}`;
-                });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
-                link.download = 'Laporan_Lengkap.csv';
-                link.click();
-            };
+            // --- RENDER VIEWS ---
 
-            // RENDER MENU
+            // VIEW: MENU UTAMA
             if (view === 'menu') return (
                 <div className="min-h-screen bg-slate-50 relative pb-24">
                     <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-8 rounded-b-[40px] shadow-xl text-white text-center">
-                        <h1 className="text-3xl font-extrabold tracking-tight">Retreat GSM GKPS</h1>
-                        <p className="text-indigo-100 mt-1">Sistem Absensi Digital</p>
+                        <h1 className="text-3xl font-extrabold">Retreat GSM GKPS</h1>
+                        <p className="text-indigo-100">Panel Absensi Digital</p>
                         
-                        {/* ROLE INDICATOR */}
+                        {/* Status Bar */}
                         <div className="mt-4 flex flex-wrap justify-center gap-2">
-                            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold bg-white/20 backdrop-blur-md ${isConnected ? 'text-green-300' : 'text-red-300'}`}>
-                                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+                            <div className={`px-3 py-1 rounded-full text-[10px] font-bold bg-white/20 backdrop-blur-md ${isConnected?'text-green-300':'text-red-300'}`}>
                                 {isConnected ? 'ONLINE' : 'CONNECTING...'}
                             </div>
-                            
                             {userRole !== 'guest' && (
-                                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold backdrop-blur-md border ${userRole === 'admin' ? 'bg-red-500/30 border-red-400 text-red-100' : 'bg-blue-500/30 border-blue-400 text-blue-100'}`}>
-                                    <i data-lucide={userRole === 'admin' ? 'shield-check' : 'user'} width="10"></i>
-                                    {userRole === 'admin' ? 'ADMINISTRATOR' : 'PETUGAS SCAN'}
-                                </div>
+                                <button onClick={handleLogout} className={`px-3 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1 ${userRole==='admin' ? 'bg-red-500/30 border-red-400 text-red-100' : 'bg-blue-500/30 border-blue-400 text-blue-100'}`}>
+                                    <i data-lucide={userRole==='admin'?'shield':'user'} width="10"></i> {userRole==='admin' ? 'ADMIN' : 'PETUGAS'} (Logout)
+                                </button>
                             )}
                         </div>
                     </div>
 
                     <div className="max-w-md mx-auto px-6 -mt-8 relative z-20">
                         {userRole === 'guest' ? (
-                            <div className="glass-card rounded-2xl p-8 shadow-lg text-center animate-slide-up">
+                            /* TAMPILAN GUEST (LOGIN) */
+                            <div className="glass-card rounded-2xl p-8 shadow-lg text-center animate-fade-in">
                                 <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <i data-lucide="lock" width="32"></i>
                                 </div>
-                                <h3 className="font-bold text-gray-800 text-lg">Akses Terbatas</h3>
-                                <p className="text-sm text-gray-500 mb-6">Silakan login sebagai Admin atau Petugas untuk memulai.</p>
-                                <button onClick={handleLogin} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700">LOGIN SEKARANG</button>
+                                <h3 className="font-bold text-gray-800 text-lg">Akses Terkunci</h3>
+                                <p className="text-sm text-gray-500 mb-6">Silakan login untuk mengakses sistem.</p>
+                                <button onClick={handleLogin} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700">LOGIN PETUGAS / ADMIN</button>
                             </div>
                         ) : (
+                            /* TAMPILAN DASHBOARD (ADMIN & SCANNER) */
                             <>
-                                <div className="glass-card rounded-2xl p-6 shadow-lg animate-slide-up">
+                                <div className="glass-card rounded-2xl p-6 shadow-lg animate-fade-in">
                                     <div className="flex justify-between items-center mb-4">
                                         <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pilih Kegiatan:</h2>
                                         {userRole === 'admin' && (
-                                            <button onClick={() => setShowAddSession(true)} className="bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-200 transition text-xs font-bold flex items-center gap-1" title="Tambah Sesi">
-                                                <i data-lucide="plus-circle" width="14"></i> Sesi Baru
-                                            </button>
+                                            <button onClick={() => setShowAddSession(true)} className="bg-indigo-50 text-indigo-600 p-1.5 rounded hover:bg-indigo-100"><i data-lucide="plus" width="16"></i></button>
                                         )}
                                     </div>
                                     
+                                    {loading ? <div className="text-center py-4 text-gray-400 text-sm">Memuat Data...</div> : 
                                     <div className="space-y-3 max-h-[40vh] overflow-y-auto hide-scroll">
-                                        {sessions.map((s, index) => {
+                                        {sessions.map((s, idx) => {
                                             const isActive = activeSession && activeSession.id === s.id;
                                             const count = Object.keys(attendance[s.id] || {}).length;
-                                            
                                             return (
-                                                <div key={s.id} className="relative group flex items-stretch gap-2">
+                                                <div key={s.id} className="flex gap-2">
                                                     <button onClick={() => setActiveSession(s)} className={`flex-1 flex items-center p-3 rounded-xl border-2 transition-all ${isActive ? `border-${s.color}-500 bg-${s.color}-50` : 'border-transparent bg-gray-50'}`}>
-                                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${isActive ? `bg-${s.color}-500` : 'bg-gray-300'}`}>
-                                                            <i data-lucide={s.icon} width="20"></i>
-                                                        </div>
+                                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${isActive ? `bg-${s.color}-500` : 'bg-gray-300'}`}><i data-lucide={s.icon} width="20"></i></div>
                                                         <div className="ml-3 text-left flex-1">
                                                             <div className={`font-bold text-sm ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{s.title}</div>
                                                             <div className="text-[10px] text-gray-400">{s.desc}</div>
                                                         </div>
-                                                        <div className={`text-xs font-bold ${isActive ? `text-${s.color}-600` : 'text-gray-400'}`}>Hadir: {count}</div>
+                                                        <div className={`text-xs font-bold ${isActive ? `text-${s.color}-600` : 'text-gray-400'}`}>{count}</div>
                                                     </button>
-
                                                     {userRole === 'admin' && (
-                                                        <div className="flex flex-col gap-1 justify-center bg-white p-1 rounded-lg border border-gray-200 shadow-sm animate-fade-in">
-                                                            {index > 0 && <button onClick={() => moveSession(index, 'up')} className="admin-btn admin-btn-move"><i data-lucide="chevron-up" width="16"></i></button>}
-                                                            {index < sessions.length - 1 && <button onClick={() => moveSession(index, 'down')} className="admin-btn admin-btn-move"><i data-lucide="chevron-down" width="16"></i></button>}
-                                                            <button onClick={() => handleDeleteSession(s.id, s.title)} className="admin-btn admin-btn-del mt-1"><i data-lucide="trash-2" width="16"></i></button>
+                                                        <div className="flex flex-col gap-1 justify-center">
+                                                            {idx > 0 && <button onClick={()=>moveSession(idx,'up')} className="admin-btn bg-blue-50 text-blue-600"><i data-lucide="chevron-up" width="14"></i></button>}
+                                                            {idx < sessions.length-1 && <button onClick={()=>moveSession(idx,'down')} className="admin-btn bg-blue-50 text-blue-600"><i data-lucide="chevron-down" width="14"></i></button>}
+                                                            <button onClick={()=>handleDeleteSession(s.id, s.title)} className="admin-btn bg-red-50 text-red-600"><i data-lucide="trash-2" width="14"></i></button>
                                                         </div>
                                                     )}
                                                 </div>
                                             );
                                         })}
-                                    </div>
+                                    </div>}
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4 mt-6">
@@ -370,8 +317,8 @@
                                             <span className="text-xs font-bold text-gray-600">Database & QR</span>
                                         </button>
                                     ) : (
-                                        <div className="bg-gray-100 p-4 rounded-2xl shadow-inner border border-gray-200 flex flex-col items-center gap-2 opacity-50">
-                                            <div className="p-3 bg-gray-200 text-gray-400 rounded-full"><i data-lucide="lock" width="20"></i></div>
+                                        <div className="bg-gray-100 p-4 rounded-2xl border flex flex-col items-center gap-2 opacity-50">
+                                            <i data-lucide="lock" className="text-gray-400"></i>
                                             <span className="text-xs font-bold text-gray-400">Database Locked</span>
                                         </div>
                                     )}
@@ -381,7 +328,6 @@
                                     </button>
                                 </div>
 
-                                {/* Reset Data - ADMIN ONLY */}
                                 {userRole === 'admin' && (
                                     <button onClick={resetDatabase} className="w-full mt-6 py-2 text-xs text-red-300 hover:text-red-500 font-bold flex items-center justify-center gap-1 transition-colors">
                                         <i data-lucide="trash-2" width="12"></i> RESET SYSTEM (DATA WIPE)
@@ -391,7 +337,6 @@
                         )}
                     </div>
 
-                    {/* Start Scan Button - Available for both Admin & Scanner */}
                     {userRole !== 'guest' && (
                         <div className="fixed bottom-6 left-0 right-0 px-6 z-40 flex justify-center">
                             <button onClick={() => setView('scan')} className="w-full max-w-md bg-indigo-600 text-white p-4 rounded-2xl shadow-xl shadow-indigo-300 btn-pulse flex items-center justify-center gap-3 font-bold text-lg active:scale-95 transition">
@@ -400,22 +345,15 @@
                         </div>
                     )}
 
-                    {/* LOGIN TOGGLE */}
-                    <button onClick={handleLogin} className="fixed top-4 right-4 z-50 text-white/50 hover:text-white p-2">
-                        <i data-lucide={userRole !== 'guest' ? "log-out" : "shield"} width="20"></i>
-                    </button>
-
                     {showAddSession && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
                             <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
-                                <h3 className="font-bold text-lg text-gray-800 mb-4">Tambah Sesi Baru</h3>
-                                <div className="space-y-3">
-                                    <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 outline-none font-bold" placeholder="Nama Sesi (misal: Makan Siang)" value={newSessionData.title} onChange={e => setNewSessionData({...newSessionData, title: e.target.value})} />
-                                    <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 outline-none" placeholder="Keterangan (Opsional)" value={newSessionData.desc} onChange={e => setNewSessionData({...newSessionData, desc: e.target.value})} />
-                                    <div className="flex gap-2 pt-2">
-                                        <button onClick={() => setShowAddSession(false)} className="flex-1 py-3 text-gray-500 font-bold">Batal</button>
-                                        <button onClick={handleAddSession} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">Simpan</button>
-                                    </div>
+                                <h3 className="font-bold text-lg text-gray-800 mb-4">Tambah Sesi</h3>
+                                <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border mb-3" placeholder="Nama Sesi" value={newSessionData.title} onChange={e => setNewSessionData({...newSessionData, title: e.target.value})} />
+                                <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border mb-4" placeholder="Ket (Opsional)" value={newSessionData.desc} onChange={e => setNewSessionData({...newSessionData, desc: e.target.value})} />
+                                <div className="flex gap-2">
+                                    <button onClick={() => setShowAddSession(false)} className="flex-1 py-3 text-gray-500 font-bold">Batal</button>
+                                    <button onClick={handleAddSession} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">Simpan</button>
                                 </div>
                             </div>
                         </div>
@@ -423,7 +361,7 @@
                 </div>
             );
 
-            // SCANNER VIEW
+            // VIEW: SCANNER
             if (view === 'scan') return (
                 <div className="fixed inset-0 bg-black z-50 flex flex-col">
                     <div className="bg-gray-900/80 backdrop-blur-md p-4 flex items-center justify-between text-white z-10 border-b border-gray-800">
@@ -476,7 +414,7 @@
                 </div>
             );
 
-            // DATABASE & REPORT
+            // VIEW: DATABASE & REPORT
             if (view === 'database' || view === 'report') return (
                 <div className="min-h-screen bg-slate-50 p-4">
                     <div className="max-w-2xl mx-auto">
@@ -484,8 +422,17 @@
                         <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
                             <div className="p-5 border-b bg-gray-50/50 flex justify-between items-center">
                                 <h2 className="font-bold text-lg text-gray-800">{view === 'database' ? 'Database & QR' : 'Laporan'}</h2>
-                                {view === 'report' && <button onClick={downloadReport} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex gap-2"><i data-lucide="download" width="16"></i> CSV</button>}
+                                {view === 'report' && <button onClick={()=>{
+                                    let csv = 'No,ID,Nama,Kategori'; sessions.forEach(s=>csv+=`,${s.title}`); csv+='\n';
+                                    Object.values(participants).forEach((p,i)=>{
+                                        let r = `${i+1},${p.id},"${p.nama}",${p.category}`;
+                                        sessions.forEach(s=> r += `,${attendance[s.id]?.[p.id]?.timestamp.replace(',','') || '-'}`);
+                                        csv += `\n${r}`;
+                                    });
+                                    const a = document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='Laporan.csv'; a.click();
+                                }} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex gap-2"><i data-lucide="download" width="16"></i> CSV</button>}
                             </div>
+                            
                             {view === 'database' && (
                                 <div className="p-5 space-y-3 bg-indigo-50/30">
                                     <div className="relative group cursor-pointer bg-white border-2 border-dashed border-indigo-200 rounded-xl p-4 flex flex-col items-center justify-center hover:border-indigo-500 transition">
@@ -493,13 +440,12 @@
                                         <i data-lucide="upload-cloud" className="text-indigo-400 mb-2"></i>
                                         <span className="text-sm font-bold text-indigo-700">Upload CSV Peserta</span>
                                     </div>
-                                    {Object.keys(participants).length > 0 && (
-                                        <button onClick={downloadAllQR} disabled={isDownloading} className={`w-full py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2 shadow-lg ${isDownloading ? 'bg-slate-400' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-                                            {isDownloading ? 'Sedang Memproses...' : <><i data-lucide="download"></i> DOWNLOAD SEMUA QR CODE</>}
-                                        </button>
-                                    )}
+                                    <button onClick={downloadAllQR} disabled={isDownloading} className={`w-full py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2 shadow-lg ${isDownloading ? 'bg-slate-400' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                                        {isDownloading ? 'Memproses...' : <><i data-lucide="download"></i> DOWNLOAD SEMUA QR</>}
+                                    </button>
                                 </div>
                             )}
+
                             <div className="overflow-x-auto max-h-[60vh] hide-scroll">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-gray-50 text-gray-400 font-bold text-[10px] uppercase sticky top-0 z-10">
