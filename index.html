@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Retreat GSM GKPS - Admin Pro Manager</title>
+    <title>Retreat GSM GKPS - Secure System</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -63,7 +63,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
-        // Default Sessions with Order
+        // Default Sessions
         const DEFAULT_SESSIONS = [
             { id: 'registrasi_awal', title: 'Registrasi Awal', desc: 'Check-in Kedatangan', icon: 'user-check', color: 'blue', order: 0 },
             { id: 'sesi_1', title: 'Sesi 1', desc: 'Pembukaan', icon: 'book-open', color: 'indigo', order: 1 },
@@ -75,7 +75,9 @@
             const [view, setView] = useState('menu');
             const [sessions, setSessions] = useState([]);
             const [activeSession, setActiveSession] = useState(null);
-            const [isAdmin, setIsAdmin] = useState(false);
+            
+            // ROLE MANAGEMENT: 'guest', 'scanner', 'admin'
+            const [userRole, setUserRole] = useState('guest'); 
             
             const [participants, setParticipants] = useState({});
             const [attendance, setAttendance] = useState({});
@@ -98,7 +100,7 @@
                     if (!window.db) return;
                     setIsConnected(true);
                     
-                    // 1. Sync Sessions (Dengan Sorting)
+                    // 1. Sync Sessions
                     const sessionRef = window.dbRef(window.db, 'config/sessions');
                     window.dbOnValue(sessionRef, (snap) => {
                         const val = snap.val();
@@ -119,15 +121,28 @@
                 return () => clearTimeout(initFirebase);
             }, []);
 
-            useEffect(() => { lucide.createIcons(); }, [view, sessions, activeSession, manualMode, scanResult, isAdmin]);
+            useEffect(() => { lucide.createIcons(); }, [view, sessions, activeSession, manualMode, scanResult, userRole]);
 
-            // --- ADMIN FUNCTIONS ---
-            const toggleAdmin = () => {
-                if (isAdmin) { setIsAdmin(false); alert("Keluar dari Mode Admin"); }
-                else {
-                    const pass = prompt("Masukkan Password Admin:");
-                    if (pass === "GKPS2025") { setIsAdmin(true); alert("Mode Admin Aktif! Gunakan tombol di samping kanan untuk mengatur sesi."); }
-                    else if (pass) { alert("Password Salah!"); }
+            // --- AUTH & ROLE FUNCTIONS ---
+            const handleLogin = () => {
+                if (userRole !== 'guest') {
+                    // Logout Logic
+                    if(confirm("Logout dari sistem?")) {
+                        setUserRole('guest');
+                        setView('menu');
+                    }
+                } else {
+                    // Login Logic
+                    const pass = prompt("MASUKKAN PASSWORD:\n• Kode Petugas (Scan Only)\n• Kode Administrator (Full Access)");
+                    if (pass === "GKPS2025") {
+                        setUserRole('admin');
+                        alert("LOGIN BERHASIL: MODE ADMINISTRATOR\nAkses Penuh Aktif.");
+                    } else if (pass === "SCAN2025") {
+                        setUserRole('scanner');
+                        alert("LOGIN BERHASIL: MODE PETUGAS SCAN\nMenu Database disembunyikan.");
+                    } else if (pass) {
+                        alert("Password Salah!");
+                    }
                 }
             };
 
@@ -143,27 +158,22 @@
                 }
             };
 
+            // --- SESSION MANAGEMENT ---
             const handleAddSession = () => {
                 if (!newSessionData.title) return alert("Nama Sesi Wajib Diisi!");
                 const id = `sess_${Date.now()}`;
                 const newOrder = sessions.length > 0 ? (sessions[sessions.length - 1].order || 0) + 1 : 0;
                 
                 const newSession = {
-                    id: id,
-                    title: newSessionData.title,
-                    desc: newSessionData.desc || 'Kegiatan Tambahan',
-                    icon: 'calendar',
-                    color: 'orange',
-                    order: newOrder
+                    id: id, title: newSessionData.title, desc: newSessionData.desc || 'Kegiatan Tambahan',
+                    icon: 'calendar', color: 'orange', order: newOrder
                 };
                 window.dbSet(window.dbRef(window.db, `config/sessions/${id}`), newSession)
                     .then(() => { setShowAddSession(false); setNewSessionData({ title: '', desc: '' }); });
             };
 
             const handleDeleteSession = (sessId, sessTitle) => {
-                if (confirm(`Hapus sesi "${sessTitle}"?`)) {
-                    window.dbRemove(window.dbRef(window.db, `config/sessions/${sessId}`));
-                }
+                if (confirm(`Hapus sesi "${sessTitle}"?`)) window.dbRemove(window.dbRef(window.db, `config/sessions/${sessId}`));
             };
 
             const moveSession = (index, direction) => {
@@ -179,7 +189,7 @@
                 window.dbUpdate(window.dbRef(window.db), updates);
             };
 
-            // --- QR LOGIC ---
+            // --- QR & DATA ---
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(id)}&margin=10`;
 
             const downloadAllQR = async () => {
@@ -219,7 +229,7 @@
                 }
                 const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
                 window.dbSet(window.dbRef(window.db, `attendance/${activeSession.id}/${qrId}`), {
-                    timestamp, name: p.nama, category: p.category, device: 'Web App'
+                    timestamp, name: p.nama, category: p.category, device: userRole === 'admin' ? 'Admin Device' : 'Scanner Device'
                 });
                 setScanResult({ success: true, title: 'BERHASIL', msg: `Selamat Datang, ${p.nama}`, p, time: timestamp });
             };
@@ -282,82 +292,117 @@
                 <div className="min-h-screen bg-slate-50 relative pb-24">
                     <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-8 rounded-b-[40px] shadow-xl text-white text-center">
                         <h1 className="text-3xl font-extrabold tracking-tight">Retreat GSM GKPS</h1>
-                        <p className="text-indigo-100 mt-1">Absensi & Hadiah</p>
-                        <div className={`mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold bg-white/20 backdrop-blur-md ${isConnected ? 'text-green-300' : 'text-red-300'}`}>
-                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-                            {isConnected ? 'SYSTEM ONLINE' : 'CONNECTING...'}
+                        <p className="text-indigo-100 mt-1">Sistem Absensi Digital</p>
+                        
+                        {/* ROLE INDICATOR */}
+                        <div className="mt-4 flex flex-wrap justify-center gap-2">
+                            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold bg-white/20 backdrop-blur-md ${isConnected ? 'text-green-300' : 'text-red-300'}`}>
+                                <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+                                {isConnected ? 'ONLINE' : 'CONNECTING...'}
+                            </div>
+                            
+                            {userRole !== 'guest' && (
+                                <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold backdrop-blur-md border ${userRole === 'admin' ? 'bg-red-500/30 border-red-400 text-red-100' : 'bg-blue-500/30 border-blue-400 text-blue-100'}`}>
+                                    <i data-lucide={userRole === 'admin' ? 'shield-check' : 'user'} width="10"></i>
+                                    {userRole === 'admin' ? 'ADMINISTRATOR' : 'PETUGAS SCAN'}
+                                </div>
+                            )}
                         </div>
                     </div>
 
                     <div className="max-w-md mx-auto px-6 -mt-8 relative z-20">
-                        <div className="glass-card rounded-2xl p-6 shadow-lg animate-slide-up">
-                            <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pilih Kegiatan:</h2>
-                                {isAdmin && (
-                                    <button onClick={() => setShowAddSession(true)} className="bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-200 transition text-xs font-bold flex items-center gap-1" title="Tambah Sesi">
-                                        <i data-lucide="plus-circle" width="14"></i> Sesi Baru
+                        {userRole === 'guest' ? (
+                            <div className="glass-card rounded-2xl p-8 shadow-lg text-center animate-slide-up">
+                                <div className="w-16 h-16 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <i data-lucide="lock" width="32"></i>
+                                </div>
+                                <h3 className="font-bold text-gray-800 text-lg">Akses Terbatas</h3>
+                                <p className="text-sm text-gray-500 mb-6">Silakan login sebagai Admin atau Petugas untuk memulai.</p>
+                                <button onClick={handleLogin} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700">LOGIN SEKARANG</button>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="glass-card rounded-2xl p-6 shadow-lg animate-slide-up">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pilih Kegiatan:</h2>
+                                        {userRole === 'admin' && (
+                                            <button onClick={() => setShowAddSession(true)} className="bg-indigo-100 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-200 transition text-xs font-bold flex items-center gap-1" title="Tambah Sesi">
+                                                <i data-lucide="plus-circle" width="14"></i> Sesi Baru
+                                            </button>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="space-y-3 max-h-[40vh] overflow-y-auto hide-scroll">
+                                        {sessions.map((s, index) => {
+                                            const isActive = activeSession && activeSession.id === s.id;
+                                            const count = Object.keys(attendance[s.id] || {}).length;
+                                            
+                                            return (
+                                                <div key={s.id} className="relative group flex items-stretch gap-2">
+                                                    <button onClick={() => setActiveSession(s)} className={`flex-1 flex items-center p-3 rounded-xl border-2 transition-all ${isActive ? `border-${s.color}-500 bg-${s.color}-50` : 'border-transparent bg-gray-50'}`}>
+                                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${isActive ? `bg-${s.color}-500` : 'bg-gray-300'}`}>
+                                                            <i data-lucide={s.icon} width="20"></i>
+                                                        </div>
+                                                        <div className="ml-3 text-left flex-1">
+                                                            <div className={`font-bold text-sm ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{s.title}</div>
+                                                            <div className="text-[10px] text-gray-400">{s.desc}</div>
+                                                        </div>
+                                                        <div className={`text-xs font-bold ${isActive ? `text-${s.color}-600` : 'text-gray-400'}`}>Hadir: {count}</div>
+                                                    </button>
+
+                                                    {userRole === 'admin' && (
+                                                        <div className="flex flex-col gap-1 justify-center bg-white p-1 rounded-lg border border-gray-200 shadow-sm animate-fade-in">
+                                                            {index > 0 && <button onClick={() => moveSession(index, 'up')} className="admin-btn admin-btn-move"><i data-lucide="chevron-up" width="16"></i></button>}
+                                                            {index < sessions.length - 1 && <button onClick={() => moveSession(index, 'down')} className="admin-btn admin-btn-move"><i data-lucide="chevron-down" width="16"></i></button>}
+                                                            <button onClick={() => handleDeleteSession(s.id, s.title)} className="admin-btn admin-btn-del mt-1"><i data-lucide="trash-2" width="16"></i></button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 mt-6">
+                                    {userRole === 'admin' ? (
+                                        <button onClick={() => setView('database')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
+                                            <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><i data-lucide="database" width="20"></i></div>
+                                            <span className="text-xs font-bold text-gray-600">Database & QR</span>
+                                        </button>
+                                    ) : (
+                                        <div className="bg-gray-100 p-4 rounded-2xl shadow-inner border border-gray-200 flex flex-col items-center gap-2 opacity-50">
+                                            <div className="p-3 bg-gray-200 text-gray-400 rounded-full"><i data-lucide="lock" width="20"></i></div>
+                                            <span className="text-xs font-bold text-gray-400">Database Locked</span>
+                                        </div>
+                                    )}
+                                    <button onClick={() => setView('report')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
+                                        <div className="p-3 bg-green-100 text-green-600 rounded-full"><i data-lucide="file-text" width="20"></i></div>
+                                        <span className="text-xs font-bold text-gray-600">Laporan</span>
+                                    </button>
+                                </div>
+
+                                {/* Reset Data - ADMIN ONLY */}
+                                {userRole === 'admin' && (
+                                    <button onClick={resetDatabase} className="w-full mt-6 py-2 text-xs text-red-300 hover:text-red-500 font-bold flex items-center justify-center gap-1 transition-colors">
+                                        <i data-lucide="trash-2" width="12"></i> RESET SYSTEM (DATA WIPE)
                                     </button>
                                 )}
-                            </div>
-                            
-                            <div className="space-y-3 max-h-[40vh] overflow-y-auto hide-scroll">
-                                {sessions.map((s, index) => {
-                                    const isActive = activeSession && activeSession.id === s.id;
-                                    const count = Object.keys(attendance[s.id] || {}).length;
-                                    
-                                    return (
-                                        <div key={s.id} className="relative group flex items-stretch gap-2">
-                                            {/* SESSION CARD */}
-                                            <button onClick={() => setActiveSession(s)} className={`flex-1 flex items-center p-3 rounded-xl border-2 transition-all ${isActive ? `border-${s.color}-500 bg-${s.color}-50` : 'border-transparent bg-gray-50'}`}>
-                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${isActive ? `bg-${s.color}-500` : 'bg-gray-300'}`}>
-                                                    <i data-lucide={s.icon} width="20"></i>
-                                                </div>
-                                                <div className="ml-3 text-left flex-1">
-                                                    <div className={`font-bold text-sm ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{s.title}</div>
-                                                    <div className="text-[10px] text-gray-400">{s.desc}</div>
-                                                </div>
-                                                <div className={`text-xs font-bold ${isActive ? `text-${s.color}-600` : 'text-gray-400'}`}>Hadir: {count}</div>
-                                            </button>
-
-                                            {/* ADMIN CONTROLS PANEL (Muncul di kanan) */}
-                                            {isAdmin && (
-                                                <div className="flex flex-col gap-1 justify-center bg-white p-1 rounded-lg border border-gray-200 shadow-sm animate-fade-in">
-                                                    {index > 0 && <button onClick={() => moveSession(index, 'up')} className="admin-btn admin-btn-move" title="Naik"><i data-lucide="chevron-up" width="16"></i></button>}
-                                                    {index < sessions.length - 1 && <button onClick={() => moveSession(index, 'down')} className="admin-btn admin-btn-move" title="Turun"><i data-lucide="chevron-down" width="16"></i></button>}
-                                                    <button onClick={() => handleDeleteSession(s.id, s.title)} className="admin-btn admin-btn-del mt-1" title="Hapus"><i data-lucide="trash-2" width="16"></i></button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 mt-6">
-                            <button onClick={() => setView('database')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
-                                <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><i data-lucide="database" width="20"></i></div>
-                                <span className="text-xs font-bold text-gray-600">Database & QR</span>
-                            </button>
-                            <button onClick={() => setView('report')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
-                                <div className="p-3 bg-green-100 text-green-600 rounded-full"><i data-lucide="file-text" width="20"></i></div>
-                                <span className="text-xs font-bold text-gray-600">Laporan</span>
-                            </button>
-                        </div>
-                        
-                        {/* TOMBOL RESET DATA (FITUR YANG DIKEMBALIKAN) */}
-                        <button onClick={resetDatabase} className="w-full mt-6 py-2 text-xs text-red-300 hover:text-red-500 font-bold flex items-center justify-center gap-1 transition-colors">
-                            <i data-lucide="trash-2" width="12"></i> RESET SYSTEM (DATA WIPE)
-                        </button>
+                            </>
+                        )}
                     </div>
 
-                    <div className="fixed bottom-6 left-0 right-0 px-6 z-40 flex justify-center">
-                        <button onClick={() => setView('scan')} className="w-full max-w-md bg-indigo-600 text-white p-4 rounded-2xl shadow-xl shadow-indigo-300 btn-pulse flex items-center justify-center gap-3 font-bold text-lg active:scale-95 transition">
-                            <i data-lucide="scan-line"></i> MULAI SCAN
-                        </button>
-                    </div>
+                    {/* Start Scan Button - Available for both Admin & Scanner */}
+                    {userRole !== 'guest' && (
+                        <div className="fixed bottom-6 left-0 right-0 px-6 z-40 flex justify-center">
+                            <button onClick={() => setView('scan')} className="w-full max-w-md bg-indigo-600 text-white p-4 rounded-2xl shadow-xl shadow-indigo-300 btn-pulse flex items-center justify-center gap-3 font-bold text-lg active:scale-95 transition">
+                                <i data-lucide="scan-line"></i> MULAI SCAN
+                            </button>
+                        </div>
+                    )}
 
-                    <button onClick={toggleAdmin} className="fixed top-4 right-4 z-50 text-white/50 hover:text-white p-2">
-                        <i data-lucide={isAdmin ? "shield-check" : "shield"} width="20"></i>
+                    {/* LOGIN TOGGLE */}
+                    <button onClick={handleLogin} className="fixed top-4 right-4 z-50 text-white/50 hover:text-white p-2">
+                        <i data-lucide={userRole !== 'guest' ? "log-out" : "shield"} width="20"></i>
                     </button>
 
                     {showAddSession && (
