@@ -131,6 +131,18 @@
                 }
             };
 
+            const resetDatabase = () => {
+                const pass = prompt("PERINGATAN BAHAYA:\nIni akan MENGHAPUS SEMUA DATA Peserta dan Absensi di Cloud.\n\nMasukkan Password Admin untuk Konfirmasi:");
+                if (pass === "GKPS2025") {
+                    window.dbRemove(window.dbRef(window.db, 'participants'));
+                    window.dbRemove(window.dbRef(window.db, 'attendance'));
+                    alert("SYSTEM RESET: Database telah dikosongkan.");
+                    window.location.reload();
+                } else if (pass) {
+                    alert("Password Salah!");
+                }
+            };
+
             const handleAddSession = () => {
                 if (!newSessionData.title) return alert("Nama Sesi Wajib Diisi!");
                 const id = `sess_${Date.now()}`;
@@ -331,6 +343,11 @@
                                 <span className="text-xs font-bold text-gray-600">Laporan</span>
                             </button>
                         </div>
+                        
+                        {/* TOMBOL RESET DATA (FITUR YANG DIKEMBALIKAN) */}
+                        <button onClick={resetDatabase} className="w-full mt-6 py-2 text-xs text-red-300 hover:text-red-500 font-bold flex items-center justify-center gap-1 transition-colors">
+                            <i data-lucide="trash-2" width="12"></i> RESET SYSTEM (DATA WIPE)
+                        </button>
                     </div>
 
                     <div className="fixed bottom-6 left-0 right-0 px-6 z-40 flex justify-center">
@@ -343,7 +360,6 @@
                         <i data-lucide={isAdmin ? "shield-check" : "shield"} width="20"></i>
                     </button>
 
-                    {/* Modal Tambah Sesi */}
                     {showAddSession && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
                             <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
