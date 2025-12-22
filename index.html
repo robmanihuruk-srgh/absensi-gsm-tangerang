@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Retreat GSM GKPS - Admin Pro System</title>
+    <title>Retreat GSM GKPS - Admin Manager</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -58,19 +58,19 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo } = React;
 
-        // Default Sessions (Hanya dipakai jika Database Kosong)
+        // Default Sessions (Seed awal)
         const DEFAULT_SESSIONS = [
             { id: 'registrasi_awal', title: 'Registrasi Awal', desc: 'Check-in Kedatangan', icon: 'user-check', color: 'blue' },
             { id: 'sesi_1', title: 'Sesi 1', desc: 'Pembukaan', icon: 'book-open', color: 'indigo' },
-            { id: 'sesi_2', title: 'Sesi 2', desc: 'Materi', icon: 'presentation', color: 'violet' },
             { id: 'hadiah', title: 'Hadiah', desc: 'Pengambilan Souvenir', icon: 'gift', color: 'pink' }
         ];
 
         const App = () => {
             // State Utama
             const [view, setView] = useState('menu');
-            const [sessions, setSessions] = useState([]); // Dynamic from Firebase
+            const [sessions, setSessions] = useState([]);
             const [activeSession, setActiveSession] = useState(null);
+            const [isAdmin, setIsAdmin] = useState(false); // Mode Admin
             
             // Data State
             const [participants, setParticipants] = useState({});
@@ -81,8 +81,9 @@
             const [scanResult, setScanResult] = useState(null);
             const [manualMode, setManualMode] = useState(false);
             const [searchQuery, setSearchQuery] = useState("");
+            const [isDownloading, setIsDownloading] = useState(false);
             
-            // Add Session Modal State
+            // Modals
             const [showAddSession, setShowAddSession] = useState(false);
             const [newSessionData, setNewSessionData] = useState({ title: '', desc: '' });
             
@@ -95,19 +96,18 @@
                     if (!window.db) return;
                     setIsConnected(true);
                     
-                    // 1. Sync Sessions (NEW FEATURE)
+                    // 1. Sync Sessions
                     const sessionRef = window.dbRef(window.db, 'config/sessions');
                     window.dbOnValue(sessionRef, (snap) => {
                         const val = snap.val();
                         if (val) {
                             const sessionList = Object.values(val);
+                            // Sort manual agar 'registrasi' selalu di atas jika mau, tapi default insert order ok
                             setSessions(sessionList);
                             if (!activeSession && sessionList.length > 0) setActiveSession(sessionList[0]);
                         } else {
-                            // Auto-seed default sessions if empty
-                            DEFAULT_SESSIONS.forEach(s => {
-                                window.dbSet(window.dbRef(window.db, `config/sessions/${s.id}`), s);
-                            });
+                            // Auto-seed
+                            DEFAULT_SESSIONS.forEach(s => window.dbSet(window.dbRef(window.db, `config/sessions/${s.id}`), s));
                         }
                     });
 
@@ -121,67 +121,100 @@
                 return () => clearTimeout(initFirebase);
             }, []);
 
-            useEffect(() => { lucide.createIcons(); }, [view, sessions, activeSession, manualMode, scanResult, showAddSession]);
+            useEffect(() => { lucide.createIcons(); }, [view, sessions, activeSession, manualMode, scanResult, isAdmin]);
 
-            // --- LOGIC: ADD NEW SESSION ---
+            // --- ADMIN FUNCTIONS ---
+            const toggleAdmin = () => {
+                if (isAdmin) {
+                    setIsAdmin(false);
+                    alert("Keluar dari Mode Admin");
+                } else {
+                    const pass = prompt("Masukkan Password Admin:");
+                    if (pass === "GKPS2025") {
+                        setIsAdmin(true);
+                        alert("Mode Admin Aktif! Anda bisa menambah dan menghapus sesi.");
+                    } else if (pass) {
+                        alert("Password Salah!");
+                    }
+                }
+            };
+
             const handleAddSession = () => {
                 if (!newSessionData.title) return alert("Nama Sesi Wajib Diisi!");
-                
-                const id = `custom_${Date.now()}`;
+                const id = `sess_${Date.now()}`;
                 const newSession = {
                     id: id,
                     title: newSessionData.title,
-                    desc: newSessionData.desc || 'Sesi Tambahan',
+                    desc: newSessionData.desc || 'Kegiatan Tambahan',
                     icon: 'calendar',
-                    color: 'orange' // Default color for new sessions
+                    color: 'orange'
                 };
-
                 window.dbSet(window.dbRef(window.db, `config/sessions/${id}`), newSession)
                     .then(() => {
                         setShowAddSession(false);
                         setNewSessionData({ title: '', desc: '' });
-                        alert("Sesi Baru Berhasil Ditambahkan!");
-                    })
-                    .catch(e => alert("Gagal menyimpan: " + e.message));
+                        alert("Sesi Berhasil Ditambahkan!");
+                    });
             };
 
-            // --- LOGIC: SCANNING ---
+            const handleDeleteSession = (sessId, sessTitle) => {
+                if (confirm(`Yakin ingin MENGHAPUS sesi "${sessTitle}"? \n(Data absensi sesi ini tidak akan tampil lagi di menu, tapi tersimpan di database)`)) {
+                    window.dbRemove(window.dbRef(window.db, `config/sessions/${sessId}`));
+                }
+            };
+
+            // --- QR CODE GENERATOR (FIXED) ---
+            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(id)}&margin=10`;
+
+            const downloadAllQR = async () => {
+                const pList = Object.values(participants);
+                if (pList.length === 0) return alert("Belum ada data peserta!");
+                
+                setIsDownloading(true);
+                alert("Memulai Download... Browser akan memproses gambar satu per satu. Mohon jangan ditutup.");
+
+                for (const p of pList) {
+                    try {
+                        // Fetch image as blob to bypass cross-origin taint
+                        const response = await fetch(generateQRUrl(p.id));
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                        
+                        // Delay to prevent browser throttling
+                        await new Promise(r => setTimeout(r, 400));
+                    } catch (e) {
+                        console.error("Gagal download", p.nama, e);
+                    }
+                }
+                setIsDownloading(false);
+                alert("Selesai! Semua QR Code telah didownload.");
+            };
+
+            // --- SCANNING LOGIC ---
             const processCheckIn = (qrId) => {
                 const p = participants[qrId];
-                if (!p) {
-                    setScanResult({ success: false, title: 'QR TIDAK DIKENALI', msg: 'Peserta tidak terdaftar.' });
-                    return;
-                }
-
-                if (!activeSession) return alert("Pilih sesi terlebih dahulu!");
+                if (!p) return setScanResult({ success: false, title: 'GAGAL', msg: 'QR Code Tidak Dikenali' });
+                if (!activeSession) return alert("Pilih Sesi Dulu!");
 
                 const sessionLog = attendance[activeSession.id] || {};
-                const existing = sessionLog[qrId];
-
-                if (existing) {
-                    setScanResult({ 
-                        success: false, 
-                        title: 'SUDAH CHECK-IN', 
-                        msg: `${p.nama} sudah scan di ${activeSession.title} pada ${existing.timestamp.split(' ')[1]}`,
-                        p: p 
-                    });
+                if (sessionLog[qrId]) {
+                    setScanResult({ success: false, title: 'SUDAH ADA', msg: `${p.nama} sudah check-in sebelumnya.`, p });
                     return;
                 }
 
-                const now = new Date();
-                const timestamp = now.toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
-                
+                const timestamp = new Date().toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' });
                 window.dbSet(window.dbRef(window.db, `attendance/${activeSession.id}/${qrId}`), {
                     timestamp, name: p.nama, category: p.category, device: 'Web App'
                 });
-
-                setScanResult({
-                    success: true,
-                    title: activeSession.id === 'hadiah' ? 'HADIAH DIBERIKAN' : 'BERHASIL',
-                    msg: `Selamat datang, ${p.nama}`,
-                    p: p,
-                    time: timestamp
-                });
+                setScanResult({ success: true, title: 'BERHASIL', msg: `Selamat Datang, ${p.nama}`, p, time: timestamp });
             };
 
             const startScanner = () => {
@@ -193,12 +226,12 @@
 
             useEffect(() => {
                 if (view === 'scan' && !manualMode && !scanResult) {
-                    const timer = setTimeout(() => startScanner(), 500);
-                    return () => { clearTimeout(timer); if(scannerRef.current) scannerRef.current.clear().catch(()=>{}); };
+                    const t = setTimeout(startScanner, 500);
+                    return () => { clearTimeout(t); if(scannerRef.current) scannerRef.current.clear().catch(()=>{}); };
                 }
             }, [view, manualMode, scanResult]);
 
-            // --- DATA & REPORT ---
+            // --- CSV & REPORT ---
             const handleUploadCSV = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
@@ -214,7 +247,7 @@
                             count++;
                         }
                     });
-                    alert(`Import ${count} peserta sukses!`);
+                    alert(`Import ${count} data berhasil!`);
                 };
                 reader.readAsText(file);
             };
@@ -237,55 +270,54 @@
                 link.click();
             };
 
-            // --- RENDER ---
+            // --- VIEW RENDER ---
 
-            // 1. MENU VIEW
+            // MENU VIEW
             if (view === 'menu') return (
                 <div className="min-h-screen bg-slate-50 relative pb-24">
-                    {/* Header */}
-                    <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-8 rounded-b-[40px] shadow-xl text-white text-center relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
-                        <h1 className="text-3xl font-extrabold tracking-tight relative z-10">Retreat GSM GKPS</h1>
-                        <p className="text-indigo-100 mt-1 relative z-10">Admin Dashboard</p>
-                        <div className={`mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold backdrop-blur-md bg-white/20 border border-white/30 ${isConnected ? 'text-green-300' : 'text-red-300'}`}>
+                    <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-8 rounded-b-[40px] shadow-xl text-white text-center">
+                        <h1 className="text-3xl font-extrabold tracking-tight">Retreat GSM GKPS</h1>
+                        <p className="text-indigo-100 mt-1">Sistem Absensi Digital</p>
+                        <div className={`mt-4 inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-bold bg-white/20 backdrop-blur-md ${isConnected ? 'text-green-300' : 'text-red-300'}`}>
                             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-                            {isConnected ? 'ONLINE & SYNCED' : 'CONNECTING...'}
+                            {isConnected ? 'ONLINE' : 'OFFLINE'}
                         </div>
                     </div>
 
                     <div className="max-w-md mx-auto px-6 -mt-8 relative z-20">
                         <div className="glass-card rounded-2xl p-6 shadow-lg animate-slide-up">
                             <div className="flex justify-between items-center mb-4">
-                                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pilih Kegiatan Aktif:</h2>
-                                {/* TOMBOL TAMBAH SESI */}
-                                <button onClick={() => setShowAddSession(true)} className="bg-indigo-50 text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-100 transition" title="Tambah Sesi Baru">
-                                    <i data-lucide="plus-circle" width="16"></i>
-                                </button>
+                                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Pilih Kegiatan:</h2>
+                                {isAdmin && (
+                                    <button onClick={() => setShowAddSession(true)} className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-200 transition" title="Tambah Sesi">
+                                        <i data-lucide="plus" width="16"></i>
+                                    </button>
+                                )}
                             </div>
                             
                             <div className="space-y-3 max-h-[40vh] overflow-y-auto hide-scroll">
-                                {sessions.length === 0 && <div className="text-center text-xs text-gray-400 py-4">Memuat sesi...</div>}
                                 {sessions.map((s) => {
                                     const isActive = activeSession && activeSession.id === s.id;
                                     const count = Object.keys(attendance[s.id] || {}).length;
                                     
                                     return (
-                                        <button key={s.id} onClick={() => setActiveSession(s)}
-                                            className={`w-full flex items-center p-3 rounded-xl border-2 transition-all duration-200 ${
-                                                isActive ? `border-${s.color || 'indigo'}-500 bg-${s.color || 'indigo'}-50 shadow-md scale-[1.02]` : 'border-transparent bg-gray-50 hover:bg-gray-100'
-                                            }`}
-                                        >
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${isActive ? `bg-${s.color || 'indigo'}-500` : 'bg-gray-300'}`}>
-                                                <i data-lucide={s.icon || 'calendar'} width="20"></i>
-                                            </div>
-                                            <div className="ml-3 text-left flex-1">
-                                                <div className={`font-bold text-sm ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{s.title}</div>
-                                                <div className="text-[10px] text-gray-400">{s.desc}</div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className={`text-xs font-bold ${isActive ? `text-${s.color || 'indigo'}-600` : 'text-gray-400'}`}>Hadir: {count}</div>
-                                            </div>
-                                        </button>
+                                        <div key={s.id} className="relative group">
+                                            <button onClick={() => setActiveSession(s)} className={`w-full flex items-center p-3 rounded-xl border-2 transition-all ${isActive ? `border-${s.color}-500 bg-${s.color}-50` : 'border-transparent bg-gray-50'}`}>
+                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${isActive ? `bg-${s.color}-500` : 'bg-gray-300'}`}>
+                                                    <i data-lucide={s.icon} width="20"></i>
+                                                </div>
+                                                <div className="ml-3 text-left flex-1">
+                                                    <div className={`font-bold text-sm ${isActive ? 'text-gray-800' : 'text-gray-500'}`}>{s.title}</div>
+                                                    <div className="text-[10px] text-gray-400">{s.desc}</div>
+                                                </div>
+                                                <div className={`text-xs font-bold ${isActive ? `text-${s.color}-600` : 'text-gray-400'}`}>Hadir: {count}</div>
+                                            </button>
+                                            {isAdmin && (
+                                                <button onClick={() => handleDeleteSession(s.id, s.title)} className="absolute -right-2 -top-2 bg-red-500 text-white p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <i data-lucide="trash-2" width="12"></i>
+                                                </button>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>
@@ -294,7 +326,7 @@
                         <div className="grid grid-cols-2 gap-4 mt-6">
                             <button onClick={() => setView('database')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
                                 <div className="p-3 bg-blue-100 text-blue-600 rounded-full"><i data-lucide="database" width="20"></i></div>
-                                <span className="text-xs font-bold text-gray-600">Database</span>
+                                <span className="text-xs font-bold text-gray-600">Database & QR</span>
                             </button>
                             <button onClick={() => setView('report')} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 hover:shadow-md transition">
                                 <div className="p-3 bg-green-100 text-green-600 rounded-full"><i data-lucide="file-text" width="20"></i></div>
@@ -304,34 +336,27 @@
                     </div>
 
                     <div className="fixed bottom-6 left-0 right-0 px-6 z-40 flex justify-center">
-                        <button onClick={() => setView('scan')} className="w-full max-w-md bg-indigo-600 text-white p-4 rounded-2xl shadow-xl shadow-indigo-300 btn-pulse flex items-center justify-center gap-3 font-bold text-lg transform transition active:scale-95">
-                            <i data-lucide="scan-line"></i>
-                            MULAI SCAN SEKARANG
+                        <button onClick={() => setView('scan')} className="w-full max-w-md bg-indigo-600 text-white p-4 rounded-2xl shadow-xl shadow-indigo-300 btn-pulse flex items-center justify-center gap-3 font-bold text-lg active:scale-95 transition">
+                            <i data-lucide="scan-line"></i> MULAI SCAN
                         </button>
                     </div>
 
-                    {/* MODAL TAMBAH SESI */}
+                    <button onClick={toggleAdmin} className="fixed top-4 right-4 z-50 text-white/50 hover:text-white p-2">
+                        <i data-lucide={isAdmin ? "shield-check" : "shield"} width="20"></i>
+                    </button>
+
+                    {/* Modal Tambah Sesi */}
                     {showAddSession && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
                             <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="font-bold text-lg text-gray-800">Tambah Sesi Baru</h3>
-                                    <button onClick={() => setShowAddSession(false)} className="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
-                                </div>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nama Sesi / Kegiatan</label>
-                                        <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold" 
-                                            placeholder="Contoh: Makan Siang" 
-                                            value={newSessionData.title} onChange={e => setNewSessionData({...newSessionData, title: e.target.value})} />
+                                <h3 className="font-bold text-lg text-gray-800 mb-4">Tambah Sesi Baru</h3>
+                                <div className="space-y-3">
+                                    <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 outline-none font-bold" placeholder="Nama Sesi (misal: Makan Siang)" value={newSessionData.title} onChange={e => setNewSessionData({...newSessionData, title: e.target.value})} />
+                                    <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 outline-none" placeholder="Keterangan (Opsional)" value={newSessionData.desc} onChange={e => setNewSessionData({...newSessionData, desc: e.target.value})} />
+                                    <div className="flex gap-2 pt-2">
+                                        <button onClick={() => setShowAddSession(false)} className="flex-1 py-3 text-gray-500 font-bold">Batal</button>
+                                        <button onClick={handleAddSession} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold">Simpan</button>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Keterangan Singkat</label>
-                                        <input type="text" className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none" 
-                                            placeholder="Contoh: Di Aula Utama" 
-                                            value={newSessionData.desc} onChange={e => setNewSessionData({...newSessionData, desc: e.target.value})} />
-                                    </div>
-                                    <button onClick={handleAddSession} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition">Simpan Sesi</button>
                                 </div>
                             </div>
                         </div>
@@ -339,53 +364,35 @@
                 </div>
             );
 
-            // 2. SCANNER VIEW
+            // SCANNER VIEW
             if (view === 'scan') return (
                 <div className="fixed inset-0 bg-black z-50 flex flex-col">
-                    <div className="bg-gray-900/80 backdrop-blur-md p-4 pt-safe flex items-center justify-between text-white z-10 border-b border-gray-800">
-                        <button onClick={() => setView('menu')} className="p-2 bg-gray-800 rounded-full hover:bg-gray-700 transition"><i data-lucide="arrow-left"></i></button>
+                    <div className="bg-gray-900/80 backdrop-blur-md p-4 flex items-center justify-between text-white z-10 border-b border-gray-800">
+                        <button onClick={() => setView('menu')} className="p-2 bg-gray-800 rounded-full"><i data-lucide="arrow-left"></i></button>
                         <div className="text-center">
-                            <div className="text-[10px] text-gray-400 uppercase tracking-widest">AKTIF:</div>
-                            <div className="font-bold text-indigo-400 flex items-center gap-2 justify-center">
-                                <i data-lucide={activeSession?.icon || 'activity'} width="14"></i> {activeSession?.title || 'Pilih Sesi Dulu'}
-                            </div>
+                            <div className="text-[10px] text-gray-400 uppercase tracking-widest">KEGIATAN</div>
+                            <div className="font-bold text-indigo-400 flex items-center gap-2 justify-center"><i data-lucide={activeSession?.icon || 'activity'} width="14"></i> {activeSession?.title}</div>
                         </div>
                         <div className="w-10"></div>
                     </div>
 
-                    <div className="flex-1 relative overflow-hidden flex flex-col">
+                    <div className="flex-1 relative bg-black flex flex-col">
                         <div className="absolute top-4 w-full flex justify-center z-20">
                             <div className="bg-gray-800/80 backdrop-blur rounded-full p-1 flex border border-gray-700">
-                                <button onClick={() => setManualMode(false)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${!manualMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400'}`}>Kamera</button>
-                                <button onClick={() => setManualMode(true)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${manualMode ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400'}`}>Manual</button>
+                                <button onClick={() => setManualMode(false)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${!manualMode ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Kamera</button>
+                                <button onClick={() => setManualMode(true)} className={`px-4 py-1.5 rounded-full text-xs font-bold transition ${manualMode ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Manual</button>
                             </div>
                         </div>
 
-                        {!manualMode && (
-                            <div className="flex-1 flex flex-col items-center justify-center bg-black">
-                                <div className="relative w-full max-w-sm aspect-square">
-                                    <div id="reader" className="w-full h-full rounded-2xl overflow-hidden border-2 border-indigo-500/30"></div>
-                                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                                        <div className="w-64 h-64 border-2 border-indigo-500 rounded-lg relative opacity-70">
-                                            <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-white -mt-1 -ml-1"></div>
-                                            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-white -mb-1 -mr-1"></div>
-                                            <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-white -mb-1 -ml-1"></div>
-                                        </div>
-                                    </div>
-                                    <div className="absolute bottom-4 w-full text-center">
-                                        <p className="text-white/70 text-xs bg-black/50 inline-block px-3 py-1 rounded-full backdrop-blur">Arahkan kamera ke QR Code</p>
-                                    </div>
-                                </div>
+                        {!manualMode ? (
+                            <div className="flex-1 flex flex-col items-center justify-center p-4">
+                                <div id="reader" className="w-full max-w-sm rounded-2xl overflow-hidden border-2 border-indigo-500/50 shadow-[0_0_30px_rgba(79,70,229,0.3)]"></div>
+                                <p className="text-gray-500 text-xs mt-4">Arahkan kamera ke QR Code</p>
                             </div>
-                        )}
-
-                        {manualMode && (
+                        ) : (
                             <div className="flex-1 bg-gray-100 flex flex-col rounded-t-[30px] mt-16 overflow-hidden animate-slide-up">
                                 <div className="p-4 bg-white border-b shadow-sm">
-                                    <div className="relative">
-                                        <i data-lucide="search" className="absolute left-3 top-3 text-gray-400" width="18"></i>
-                                        <input type="text" placeholder="Cari peserta..." className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-xl border-none focus:ring-2 focus:ring-indigo-500 outline-none font-semibold text-gray-700" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-                                    </div>
+                                    <div className="relative"><i data-lucide="search" className="absolute left-3 top-3 text-gray-400" width="18"></i><input type="text" placeholder="Cari peserta..." className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-xl border-none outline-none font-semibold text-gray-700" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-4 space-y-2">
                                     {Object.values(participants).filter(p => p.nama.toLowerCase().includes(searchQuery.toLowerCase())).map(p => {
@@ -393,7 +400,7 @@
                                         return (
                                             <div key={p.id} className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
                                                 <div><div className="font-bold text-gray-800">{p.nama}</div><div className="text-xs text-gray-500">{p.category}</div></div>
-                                                {isDone ? <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg border border-green-100 flex items-center gap-1"><i data-lucide="check" width="12"></i> Selesai</span> : <button onClick={() => processCheckIn(p.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-indigo-700 shadow-lg">Pilih</button>}
+                                                {isDone ? <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-1 rounded-lg border border-green-100 flex items-center gap-1"><i data-lucide="check" width="12"></i> Selesai</span> : <button onClick={() => processCheckIn(p.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold">Pilih</button>}
                                             </div>
                                         )
                                     })}
@@ -404,13 +411,10 @@
                         {scanResult && (
                             <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
                                 <div className={`w-full max-w-sm bg-white rounded-3xl p-6 text-center shadow-2xl mb-4 border-b-8 ${scanResult.success ? 'border-green-500' : 'border-red-500'}`}>
-                                    <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 ${scanResult.success ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                                        <i data-lucide={scanResult.success ? 'check' : 'alert-triangle'} width="32"></i>
-                                    </div>
+                                    <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center mb-4 ${scanResult.success ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}><i data-lucide={scanResult.success ? 'check' : 'alert-triangle'} width="32"></i></div>
                                     <h3 className={`text-xl font-extrabold mb-1 ${scanResult.success ? 'text-gray-800' : 'text-red-600'}`}>{scanResult.title}</h3>
                                     <p className="text-gray-500 text-sm mb-6">{scanResult.msg}</p>
-                                    {scanResult.p && <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100 mb-6 text-left flex items-center gap-3"><div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-bold">{scanResult.p.nama.charAt(0)}</div><div><div className="font-bold text-gray-800">{scanResult.p.nama}</div><div className="text-xs text-gray-500">{scanResult.p.category} • {scanResult.time}</div></div></div>}
-                                    <button onClick={() => setScanResult(null)} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-sm hover:bg-black transition">TUTUP / SCAN LAGI</button>
+                                    <button onClick={() => setScanResult(null)} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-sm">TUTUP</button>
                                 </div>
                             </div>
                         )}
@@ -418,50 +422,44 @@
                 </div>
             );
 
-            // 3. DATABASE & REPORT VIEW
+            // DATABASE & REPORT VIEW (FIXED QR GENERATOR)
             if (view === 'database' || view === 'report') return (
                 <div className="min-h-screen bg-slate-50 p-4">
                     <div className="max-w-2xl mx-auto">
                         <button onClick={() => setView('menu')} className="mb-6 flex items-center gap-2 text-gray-500 font-bold hover:text-indigo-600 transition"><i data-lucide="arrow-left"></i> Kembali</button>
+                        
                         <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
                             <div className="p-5 border-b bg-gray-50/50 flex justify-between items-center">
-                                <div>
-                                    <h2 className="font-bold text-lg text-gray-800">{view === 'database' ? 'Database' : 'Laporan'}</h2>
-                                    <p className="text-xs text-gray-400">{Object.keys(participants).length} Data</p>
-                                </div>
-                                {view === 'report' && <button onClick={downloadReport} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-green-700"><i data-lucide="download" width="16"></i> CSV</button>}
+                                <h2 className="font-bold text-lg text-gray-800">{view === 'database' ? 'Database & QR' : 'Laporan'}</h2>
+                                {view === 'report' && <button onClick={downloadReport} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex gap-2"><i data-lucide="download" width="16"></i> CSV</button>}
                             </div>
 
                             {view === 'database' && (
-                                <div className="p-5 grid grid-cols-1 gap-3 bg-indigo-50/30">
-                                    <div className="relative group cursor-pointer">
-                                        <input type="file" accept=".csv" onChange={handleUploadCSV} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                                        <div className="bg-white border-2 border-dashed border-indigo-200 rounded-xl p-4 flex flex-col items-center justify-center group-hover:border-indigo-500 transition">
-                                            <i data-lucide="upload-cloud" className="text-indigo-400 mb-2"></i>
-                                            <span className="text-sm font-bold text-indigo-700">Upload CSV</span>
-                                            <span className="text-[10px] text-gray-400">Format: Nama, Kategori</span>
-                                        </div>
+                                <div className="p-5 space-y-3 bg-indigo-50/30">
+                                    <div className="relative group cursor-pointer bg-white border-2 border-dashed border-indigo-200 rounded-xl p-4 flex flex-col items-center justify-center hover:border-indigo-500 transition">
+                                        <input type="file" accept=".csv" onChange={handleUploadCSV} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                        <i data-lucide="upload-cloud" className="text-indigo-400 mb-2"></i>
+                                        <span className="text-sm font-bold text-indigo-700">Upload CSV Peserta</span>
                                     </div>
-                                    {Object.keys(participants).length > 0 && <a href={`https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=CONTOH`} target="_blank" className="bg-white border border-gray-200 p-4 rounded-xl flex items-center justify-between hover:bg-gray-50"><div className="flex items-center gap-3"><div className="bg-purple-100 text-purple-600 p-2 rounded-lg"><i data-lucide="qr-code"></i></div><div className="text-sm font-bold text-gray-700">Generator QR (Eksternal)</div></div><i data-lucide="chevron-right" className="text-gray-400"></i></a>}
+                                    {Object.keys(participants).length > 0 && (
+                                        <button onClick={downloadAllQR} disabled={isDownloading} className={`w-full py-4 rounded-xl font-bold text-white flex items-center justify-center gap-2 shadow-lg ${isDownloading ? 'bg-slate-400' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
+                                            {isDownloading ? 'Sedang Memproses...' : <><i data-lucide="download"></i> DOWNLOAD SEMUA QR CODE</>}
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
                             <div className="overflow-x-auto max-h-[60vh] hide-scroll">
                                 <table className="w-full text-sm text-left">
-                                    <thead className="bg-gray-50 text-gray-400 font-bold text-[10px] uppercase tracking-wider sticky top-0 z-10 shadow-sm">
-                                        <tr>
-                                            <th className="p-4 bg-gray-50">Nama</th>
-                                            {view === 'report' ? sessions.map(s => <th key={s.id} className="p-4 bg-gray-50 whitespace-nowrap text-center">{s.title}</th>) : <th className="p-4 bg-gray-50 text-right">ID</th>}
-                                        </tr>
+                                    <thead className="bg-gray-50 text-gray-400 font-bold text-[10px] uppercase sticky top-0 z-10">
+                                        <tr><th className="p-4">Nama</th>{view === 'report' ? sessions.map(s=><th key={s.id} className="p-4 text-center whitespace-nowrap">{s.title}</th>) : <th className="p-4 text-right">QR</th>}</tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                        {Object.values(participants).map((p, i) => (
-                                            <tr key={p.id} className="hover:bg-gray-50 transition">
+                                        {Object.values(participants).map(p => (
+                                            <tr key={p.id} className="hover:bg-gray-50">
                                                 <td className="p-4"><div className="font-bold text-gray-800">{p.nama}</div><div className="text-xs text-indigo-500">{p.category}</div></td>
-                                                {view === 'report' ? sessions.map(s => {
-                                                    const log = attendance[s.id]?.[p.id];
-                                                    return <td key={s.id} className="p-4 text-center">{log ? <div className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-600 rounded-full"><i data-lucide="check" width="12"></i></div> : <span className="text-gray-200">-</span>}</td>
-                                                }) : <td className="p-4 text-right text-xs text-gray-400 font-mono">{p.id.split('-')[1]}</td>}
+                                                {view === 'report' ? sessions.map(s => <td key={s.id} className="p-4 text-center">{attendance[s.id]?.[p.id] ? <i data-lucide="check" className="text-green-500 mx-auto" width="16"></i> : '-'}</td>) : 
+                                                <td className="p-4 text-right"><img src={generateQRUrl(p.id)} className="w-10 h-10 ml-auto border rounded p-1"/></td>}
                                             </tr>
                                         ))}
                                     </tbody>
