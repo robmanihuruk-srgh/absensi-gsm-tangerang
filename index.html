@@ -16,7 +16,6 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        /* Animasi Custom */
         @keyframes scan-line {
             0% { top: 0; }
             50% { top: 100%; }
@@ -34,7 +33,6 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Komponen Utama
         const AttendanceSystem = () => {
             const [view, setView] = useState('menu');
             const [participants, setParticipants] = useState([]);
@@ -42,21 +40,24 @@
             const [scanning, setScanning] = useState(false);
             const [scanResult, setScanResult] = useState(null);
             
-            // State Form Manual
+            // State Form
             const [showAddForm, setShowAddForm] = useState(false);
             const [formData, setFormData] = useState({ nama: '', kategori: 'Pemuda' });
+
+            // State Loading Download
+            const [isDownloading, setIsDownloading] = useState(false);
 
             const videoRef = useRef(null);
             const streamRef = useRef(null);
             const canvasRef = useRef(null);
             const scanIntervalRef = useRef(null);
 
-            // Trigger Icon Lucide setiap render
+            // Trigger Icons
             useEffect(() => {
                 lucide.createIcons();
-            });
+            }, [view, participants, scanResult]);
 
-            // Load Data Awal
+            // Load Data
             useEffect(() => {
                 const savedParticipants = localStorage.getItem('retreat-participants');
                 const savedAttendance = localStorage.getItem('retreat-attendance');
@@ -83,8 +84,9 @@
                 }
             };
 
+            // PERBAIKAN 1: Menggunakan API QRServer (Lebih Stabil)
             const generateQRCode = (text) => {
-                return `https://chart.googleapis.com/chart?cht=qr&chs=200x200&chl=${encodeURIComponent(text)}`;
+                return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
             };
 
             const handleFileUpload = (e) => {
@@ -185,25 +187,48 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'Absensi_Retreat.csv';
+                a.download = `Laporan_Absensi_${new Date().toLocaleDateString('id-ID').replace(/\//g,'-')}.csv`;
                 a.click();
             };
 
-            const downloadAllQR = () => {
-                let delay = 0;
-                participants.forEach(p => {
-                    setTimeout(() => {
-                        const a = document.createElement('a');
-                        a.href = generateQRCode(p.id);
-                        a.download = `QR_${p.nama}.png`;
-                        a.click();
-                    }, delay += 500);
-                });
-                alert('Download dimulai...');
+            // PERBAIKAN 2: Fungsi Download yang Mengambil Blob Image
+            const downloadAllQR = async () => {
+                if(participants.length === 0) return;
+                setIsDownloading(true);
+                alert('Mulai mendownload QR Code. Harap tunggu proses selesai...');
+
+                for (const p of participants) {
+                    try {
+                        const url = generateQRCode(p.id);
+                        
+                        // Fetch gambar sebagai BLOB agar tidak diblokir browser
+                        const response = await fetch(url);
+                        const blob = await response.blob();
+                        const blobUrl = URL.createObjectURL(blob);
+
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        // Hapus memori blob
+                        URL.revokeObjectURL(blobUrl);
+
+                        // Delay sedikit agar browser tidak hang
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
+                    } catch (error) {
+                        console.error('Gagal download:', p.nama);
+                    }
+                }
+                
+                setIsDownloading(false);
+                alert('Semua download selesai!');
             };
 
-            // --- TAMPILAN (VIEWS) ---
-            
+            // --- VIEW: MENU ---
             if (view === 'menu') return (
                 <div className="min-h-screen bg-blue-50 p-4 pt-10">
                     <div className="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 text-center">
@@ -235,6 +260,7 @@
                 </div>
             );
 
+            // --- VIEW: GENERATE ---
             if (view === 'generate') return (
                 <div className="min-h-screen bg-purple-50 p-4">
                     <div className="max-w-md mx-auto">
@@ -242,7 +268,7 @@
                         <div className="bg-white p-6 rounded-xl shadow">
                             <h2 className="text-xl font-bold text-purple-800 mb-4">Data Peserta</h2>
                             
-                            <div className="mb-4 p-4 border-2 border-dashed rounded-lg text-center">
+                            <div className="mb-4 p-4 border-2 border-dashed rounded-lg text-center hover:bg-gray-50 transition">
                                 <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv" />
                                 <label htmlFor="csv" className="cursor-pointer text-purple-600 font-bold block">
                                     <i data-lucide="upload" className="mx-auto mb-1"></i> Upload CSV
@@ -253,26 +279,41 @@
                             <button onClick={() => setShowAddForm(!showAddForm)} className="text-sm text-purple-600 font-bold mb-3 block">+ Input Manual</button>
                             
                             {showAddForm && (
-                                <div className="bg-gray-50 p-3 rounded mb-4">
+                                <div className="bg-gray-50 p-3 rounded mb-4 animate-fade-in">
                                     <input placeholder="Nama" className="w-full p-2 border rounded mb-2" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
                                     <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
-                                        <option>Anak SM</option><option>GSM</option><option>Panitia</option><option>Umum</option>
+                                        <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
                                     </select>
                                     <button onClick={handleManualAdd} className="w-full bg-purple-600 text-white py-2 rounded">Simpan</button>
                                 </div>
                             )}
 
                             {participants.length > 0 && (
-                                <button onClick={downloadAllQR} className="w-full bg-green-500 text-white py-2 rounded mb-6 font-bold flex items-center justify-center gap-2">
-                                    <i data-lucide="download"></i> Download Semua QR
+                                <button 
+                                    onClick={downloadAllQR} 
+                                    disabled={isDownloading}
+                                    className={`w-full ${isDownloading ? 'bg-gray-400' : 'bg-green-500 hover:bg-green-600'} text-white py-3 rounded-lg mb-6 font-bold flex items-center justify-center gap-2 transition`}
+                                >
+                                    {isDownloading ? (
+                                        <span>Sedang mendownload...</span>
+                                    ) : (
+                                        <>
+                                            <i data-lucide="download"></i> Download {participants.length} QR Code
+                                        </>
+                                    )}
                                 </button>
                             )}
 
                             <div className="grid grid-cols-2 gap-3">
                                 {participants.map(p => (
                                     <div key={p.id} className="border p-2 rounded text-center bg-gray-50">
-                                        <img src={generateQRCode(p.id)} className="w-20 mx-auto" />
-                                        <p className="font-bold text-xs truncate mt-1">{p.nama}</p>
+                                        <img 
+                                            src={generateQRCode(p.id)} 
+                                            alt="QR" 
+                                            className="w-full max-w-[150px] mx-auto mb-2 mix-blend-multiply" 
+                                            loading="lazy"
+                                        />
+                                        <p className="font-bold text-xs truncate mt-1 text-gray-800">{p.nama}</p>
                                         <p className="text-[10px] text-gray-500">{p.kategori}</p>
                                     </div>
                                 ))}
@@ -282,33 +323,37 @@
                 </div>
             );
 
+            // --- VIEW: SCAN ---
             if (view === 'scan') return (
                 <div className="min-h-screen bg-black flex flex-col text-white">
-                    <div className="p-4 flex justify-between items-center bg-gray-900">
-                        <button onClick={() => { stopScanning(); setView('menu'); }} className="flex gap-2"><i data-lucide="arrow-left"></i> Menu</button>
+                    <div className="p-4 flex justify-between items-center bg-gray-900 z-10">
+                        <button onClick={() => { stopScanning(); setView('menu'); }} className="flex gap-2 items-center"><i data-lucide="arrow-left"></i> Menu</button>
                         <span className="font-bold">Scanner</span>
                         <div className="w-8"></div>
                     </div>
                     <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
                         {!scanning && !scanResult && (
-                            <button onClick={startScanning} className="bg-green-600 px-8 py-3 rounded-full font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)]">
-                                MULAI SCAN
+                            <button onClick={startScanning} className="bg-green-600 px-8 py-3 rounded-full font-bold shadow-[0_0_15px_rgba(34,197,94,0.5)] flex items-center gap-2 hover:scale-105 transition">
+                                <i data-lucide="camera"></i> MULAI SCAN
                             </button>
                         )}
                         <video ref={videoRef} className={`absolute w-full h-full object-cover ${scanning ? 'opacity-100' : 'opacity-0'}`} playsInline muted></video>
                         <canvas ref={canvasRef} className="hidden"></canvas>
                         
                         {scanning && (
-                            <div className="absolute w-64 h-64 border-2 border-green-500 rounded-lg">
+                            <div className="absolute w-64 h-64 border-2 border-green-500 rounded-lg pointer-events-none">
                                 <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-green-500 -mt-1 -ml-1"></div>
+                                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-green-500 -mt-1 -mr-1"></div>
+                                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-green-500 -mb-1 -ml-1"></div>
                                 <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-green-500 -mb-1 -mr-1"></div>
                                 <div className="absolute w-full h-0.5 bg-green-500 scan-animate shadow-[0_0_10px_lime]"></div>
+                                <p className="absolute bottom-[-40px] w-full text-center text-sm bg-black/50 rounded px-2">Arahkan kamera ke QR</p>
                             </div>
                         )}
 
                         {scanResult && (
                             <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
-                                <div className="bg-white text-gray-800 p-6 rounded-2xl w-full max-w-sm text-center">
+                                <div className="bg-white text-gray-800 p-6 rounded-2xl w-full max-w-sm text-center animate-bounce-in">
                                     <div className="flex justify-center mb-4">
                                         {scanResult.success ? 
                                             <i data-lucide="check-circle" className="text-green-500 w-16 h-16"></i> : 
@@ -318,16 +363,16 @@
                                     <h3 className={`text-2xl font-bold mb-2 ${scanResult.success ? 'text-green-700' : 'text-red-700'}`}>
                                         {scanResult.success ? 'BERHASIL' : 'GAGAL'}
                                     </h3>
-                                    <p className="mb-4 font-medium">{scanResult.message}</p>
+                                    <p className="mb-4 font-medium text-gray-600">{scanResult.message}</p>
                                     
                                     {scanResult.p && (
-                                        <div className="bg-gray-100 p-3 rounded-lg mb-4">
-                                            <p className="text-xl font-bold">{scanResult.p.nama}</p>
+                                        <div className="bg-gray-100 p-3 rounded-lg mb-4 border border-gray-200">
+                                            <p className="text-xl font-bold text-gray-800">{scanResult.p.nama}</p>
                                             <p className="text-sm text-gray-500">{scanResult.p.kategori}</p>
-                                            <p className="text-xs text-gray-400 mt-2">{scanResult.timestamp}</p>
+                                            <p className="text-xs text-gray-400 mt-2 border-t pt-2">{scanResult.timestamp}</p>
                                         </div>
                                     )}
-                                    <button onClick={() => { setScanResult(null); startScanning(); }} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">
+                                    <button onClick={() => { setScanResult(null); startScanning(); }} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition">
                                         Scan Lagi
                                     </button>
                                 </div>
@@ -337,27 +382,32 @@
                 </div>
             );
 
+            // --- VIEW: REPORT ---
             if (view === 'report') return (
                 <div className="min-h-screen bg-orange-50 p-4">
                     <div className="max-w-md mx-auto bg-white rounded-xl shadow p-6">
                         <div className="flex justify-between items-center mb-6">
-                            <button onClick={() => setView('menu')}><i data-lucide="arrow-left"></i></button>
-                            <h2 className="font-bold text-lg">Laporan</h2>
-                            <button onClick={exportToCSV} className="text-green-600"><i data-lucide="download"></i> CSV</button>
+                            <button onClick={() => setView('menu')} className="text-gray-600"><i data-lucide="arrow-left"></i></button>
+                            <h2 className="font-bold text-lg text-orange-600">Laporan Absensi</h2>
+                            <button onClick={exportToCSV} className="text-green-600 flex items-center gap-1 font-bold text-sm bg-green-50 px-3 py-1 rounded hover:bg-green-100">
+                                <i data-lucide="download" width="16"></i> CSV
+                            </button>
                         </div>
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto rounded border">
                             <table className="w-full text-sm text-left">
-                                <thead className="bg-gray-100 text-xs uppercase">
-                                    <tr><th className="p-2">No</th><th className="p-2">Nama</th><th className="p-2">Waktu</th></tr>
+                                <thead className="bg-gray-100 text-xs uppercase text-gray-600">
+                                    <tr><th className="p-3">No</th><th className="p-3">Nama</th><th className="p-3">Waktu</th></tr>
                                 </thead>
-                                <tbody>
-                                    {attendance.map((a, i) => (
-                                        <tr key={i} className="border-b">
-                                            <td className="p-2">{i+1}</td>
-                                            <td className="p-2 font-medium">
-                                                {a.nama} <br/><span className="text-[10px] text-gray-500">{a.kategori}</span>
+                                <tbody className="divide-y">
+                                    {attendance.length === 0 ? (
+                                        <tr><td colSpan="3" className="p-4 text-center text-gray-400">Belum ada data check-in.</td></tr>
+                                    ) : attendance.map((a, i) => (
+                                        <tr key={i} className="hover:bg-gray-50">
+                                            <td className="p-3 text-gray-500">{i+1}</td>
+                                            <td className="p-3 font-medium">
+                                                {a.nama} <br/><span className="text-[10px] text-white bg-orange-400 px-1 rounded">{a.kategori}</span>
                                             </td>
-                                            <td className="p-2 text-xs text-gray-500">{a.timestamp}</td>
+                                            <td className="p-3 text-xs text-gray-500 font-mono">{a.timestamp.split(',')[1]}</td>
                                         </tr>
                                     ))}
                                 </tbody>
