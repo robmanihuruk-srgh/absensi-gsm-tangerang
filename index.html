@@ -3,32 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Retreat GSM GKPS Tangerang - Cloud Sync</title>
+    <title>Retreat GSM GKPS Tangerang - Cloud System</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 
     <style>
+        /* Custom UI Tweaks */
+        body { touch-action: manipulation; } /* Mencegah zoom double tap di HP */
         #reader { border: none !important; }
         #reader__scan_region img { display: none; }
         #reader__dashboard_section_csr button { 
-            background-color: #4F46E5; color: white; border-radius: 8px; padding: 8px 16px; 
-            border: none; font-weight: bold; margin-top: 10px; cursor: pointer;
+            background-color: #4F46E5; color: white; border-radius: 8px; padding: 10px 20px; 
+            border: none; font-weight: bold; margin-top: 10px; cursor: pointer; width: 100%;
         }
         .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
         @keyframes bounceIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
     </style>
 
     <script type="module">
-        // Import Firebase dari CDN (Versi Web)
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getDatabase, ref, set, onValue, push, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        // Konfigurasi dari User
+        // Konfigurasi Project Anda
         const firebaseConfig = {
             apiKey: "AIzaSyBXYLTSAVZof9aFaeclHbeCdBX7tUNrhfA",
             authDomain: "reatreat-gsm-gkps-tangerang.firebaseapp.com",
@@ -40,176 +42,165 @@
             measurementId: "G-1MX72CSTBG"
         };
 
-        // Initialize Firebase
+        // Mulai Koneksi
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // Expose fungsi ke Window agar bisa dipakai React
+        // Sambungkan ke Window agar bisa dipakai React
         window.db = db;
         window.dbRef = ref;
         window.dbSet = set;
-        window.dbPush = push;
         window.dbOnValue = onValue;
-        window.dbRemove = remove; // Untuk fitur reset
-
-        console.log("Firebase Connected");
+        window.dbRemove = remove;
+        
+        console.log("Sistem Cloud GKPS Siap!");
     </script>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body class="bg-slate-50 text-slate-900 select-none">
 
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        const AttendanceSystem = () => {
-            // --- STATE MANAGEMENT ---
+        const CloudAttendance = () => {
+            // --- STATE UTAMA ---
             const [view, setView] = useState('menu');
             const [participants, setParticipants] = useState([]);
             const [attendance, setAttendance] = useState([]);
-            const [isLoadingData, setIsLoadingData] = useState(true);
+            const [isConnected, setIsConnected] = useState(false);
             
-            // Scanner & UI State
+            // --- STATE UI ---
             const [scanResult, setScanResult] = useState(null);
             const [showAddForm, setShowAddForm] = useState(false);
-            const [formData, setFormData] = useState({ nama: '', kategori: 'Pemuda' });
+            const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu' });
             const [isDownloading, setIsDownloading] = useState(false);
             const scannerRef = useRef(null);
 
-            // --- FIREBASE SYNC (REALTIME) ---
+            // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
-                // Tunggu sebentar sampai script module Firebase load
-                const timer = setTimeout(() => {
+                lucide.createIcons();
+                
+                // Tunggu Firebase Module Load
+                const initSync = setTimeout(() => {
                     if (!window.db) return;
+                    setIsConnected(true);
 
-                    // 1. Listen Data Peserta
+                    // 1. Ambil Data Peserta (Live)
                     const pRef = window.dbRef(window.db, 'participants');
                     window.dbOnValue(pRef, (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
-                            // Convert Object ke Array
-                            const pArray = Object.keys(data).map(key => ({ ...data[key], firebaseKey: key }));
-                            setParticipants(pArray);
+                            // Convert Object Firebase ke Array
+                            setParticipants(Object.values(data));
                         } else {
                             setParticipants([]);
                         }
-                        setIsLoadingData(false);
                     });
 
-                    // 2. Listen Data Absensi
+                    // 2. Ambil Data Kehadiran (Live)
                     const aRef = window.dbRef(window.db, 'attendance');
                     window.dbOnValue(aRef, (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
-                            const aArray = Object.values(data);
-                            setAttendance(aArray);
+                            setAttendance(Object.values(data));
                         } else {
                             setAttendance([]);
                         }
                     });
+                }, 1500);
 
-                }, 1000); // Delay safety 1 detik
-                
-                lucide.createIcons();
-                return () => clearTimeout(timer);
+                return () => clearTimeout(initSync);
             }, []);
 
-            useEffect(() => {
-                lucide.createIcons();
-            }, [view, scanResult]);
+            // Update icon saat view berubah
+            useEffect(() => { lucide.createIcons(); }, [view, scanResult, participants]);
 
             // --- DATABASE ACTIONS ---
-            const saveParticipantToCloud = (participant) => {
-                // Simpan ke Firebase (otomatis sync ke semua HP)
-                const pRef = window.dbRef(window.db, 'participants/' + participant.id);
-                window.dbSet(pRef, participant)
-                    .then(() => alert(`Peserta ${participant.nama} tersimpan di Cloud!`))
-                    .catch(err => alert("Gagal simpan: " + err.message));
+            const saveToCloud = (path, data) => {
+                if (!window.db) return alert("Belum terkoneksi internet/database!");
+                const ref = window.dbRef(window.db, path);
+                window.dbSet(ref, data).catch(err => alert("Gagal Simpan: " + err.message));
             };
 
-            const saveAttendanceToCloud = (data) => {
-                // Gunakan ID peserta sebagai key agar tidak duplikat di DB
-                const aRef = window.dbRef(window.db, 'attendance/' + data.id);
-                window.dbSet(aRef, data);
-            };
-
-            const resetDataCloud = () => {
-                const code = prompt("Masukkan kode keamanan untuk menghapus SEMUA data:");
-                if (code === "GKPS2025") { // Password sederhana
+            const handleReset = () => {
+                const pass = prompt("Masukkan Password Admin untuk menghapus SEMUA data:");
+                if (pass === "GKPS2025") {
                     window.dbRemove(window.dbRef(window.db, 'participants'));
                     window.dbRemove(window.dbRef(window.db, 'attendance'));
-                    alert('Database Cloud berhasil dikosongkan.');
-                } else if (code !== null) {
-                    alert('Kode salah!');
+                    alert("Database berhasil dikosongkan.");
+                } else if (pass) {
+                    alert("Password Salah!");
                 }
             };
 
-            // --- SCANNER LOGIC (PROFESSIONAL) ---
+            // --- SCANNER LOGIC ---
             useEffect(() => {
                 if (view === 'scan' && !scanResult) {
-                    const timeoutId = setTimeout(() => startScanner(), 300);
-                    return () => { clearTimeout(timeoutId); stopScanner(); };
+                    setTimeout(startScanner, 300);
+                    return () => stopScanner(); // Cleanup
                 }
             }, [view, scanResult]);
 
             const startScanner = () => {
-                if (scannerRef.current) scannerRef.current.clear().catch(e => {});
+                if (scannerRef.current) scannerRef.current.clear().catch(()=>{});
                 
-                const onScanSuccess = (decodedText) => handleScanResult(decodedText);
-                
-                const html5QrcodeScanner = new Html5QrcodeScanner(
-                    "reader", { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }, false
+                const scanner = new Html5QrcodeScanner(
+                    "reader", { fps: 10, qrbox: 250, aspectRatio: 1.0 }, false
                 );
-                html5QrcodeScanner.render(onScanSuccess, () => {});
-                scannerRef.current = html5QrcodeScanner;
+                
+                scanner.render((decodedText) => {
+                    handleScanSuccess(decodedText);
+                    scanner.clear(); // Stop scan setelah dapat hasil
+                }, (error) => {}); // Ignore fail logs
+                
+                scannerRef.current = scanner;
             };
 
             const stopScanner = () => {
                 if (scannerRef.current) {
-                    try { scannerRef.current.clear(); } catch(e) {}
+                    try { scannerRef.current.clear(); } catch(e){}
                     scannerRef.current = null;
                 }
             };
 
-            const handleScanResult = (qrData) => {
-                if (scannerRef.current) scannerRef.current.pause();
-
-                // Cari di local state (yang sudah di-sync firebase)
-                const p = participants.find(x => x.id === qrData);
+            const handleScanSuccess = (qrId) => {
+                const p = participants.find(item => item.id === qrId);
                 
                 if (!p) {
-                    setScanResult({ success: false, message: 'QR Code Tidak Terdaftar!' });
+                    setScanResult({ success: false, msg: 'QR Tidak Terdaftar!' });
                     return;
                 }
 
-                const exist = attendance.find(x => x.id === qrData);
+                const exist = attendance.find(item => item.id === qrId);
                 if (exist) {
-                    setScanResult({ success: false, message: 'Sudah Check-in Sebelumnya', p, timestamp: exist.timestamp });
+                    setScanResult({ success: false, msg: 'Sudah Check-in Sebelumnya', p, time: exist.timestamp });
                     return;
                 }
 
-                const newAtt = { 
-                    ...p, 
-                    timestamp: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-                    device: navigator.userAgent.includes('Mobile') ? 'HP Panitia' : 'Laptop'
+                // Simpan Kehadiran
+                const now = new Date();
+                const newAtt = {
+                    ...p,
+                    timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
+                    device: navigator.userAgent.includes('Mobile') ? 'HP' : 'Laptop'
                 };
-                
-                // Kirim ke Cloud
-                saveAttendanceToCloud(newAtt);
-                
-                setScanResult({ success: true, message: 'Check-in Berhasil!', p, timestamp: newAtt.timestamp });
+
+                saveToCloud(`attendance/${p.id}`, newAtt);
+                setScanResult({ success: true, msg: 'Check-in Berhasil!', p, time: newAtt.timestamp });
             };
 
-            // --- UTILS: CSV & QR ---
-            const generateQRCode = (text) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
+            // --- DOWNLOAD & IMPORT ---
+            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
 
             const downloadAllQR = async () => {
-                if(participants.length === 0) return;
+                if (participants.length === 0) return;
                 setIsDownloading(true);
-                alert('Memproses download... Jangan tutup browser.');
+                alert("Mendownload QR Code... (Mohon Jangan Tutup Browser)");
+                
                 for (const p of participants) {
                     try {
-                        const res = await fetch(generateQRCode(p.id));
+                        const res = await fetch(generateQRUrl(p.id));
                         const blob = await res.blob();
                         const link = document.createElement('a');
                         link.href = URL.createObjectURL(blob);
@@ -217,126 +208,132 @@
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                        await new Promise(r => setTimeout(r, 500));
-                    } catch (e) {}
+                        await new Promise(r => setTimeout(r, 500)); // Delay aman
+                    } catch (e) { console.error(e); }
                 }
                 setIsDownloading(false);
-                alert('Selesai!');
+                alert("Selesai Download!");
             };
 
-            const handleFileUpload = (e) => {
+            const handleCSV = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (ev) => {
                     const lines = ev.target.result.split('\n').filter(l => l.trim());
                     let count = 0;
+                    // Skip header row 1
                     lines.slice(1).forEach((line, idx) => {
                         const [nama, kategori] = line.split(',').map(s => s?.trim());
                         if (nama) {
-                            const newP = { id: `GSM-${Date.now()}-${idx}`, nama, kategori: kategori || 'Umum' };
-                            saveParticipantToCloud(newP); // Simpan satu per satu ke cloud
+                            const id = `GSM-${Date.now()}-${idx}`;
+                            saveToCloud(`participants/${id}`, { id, nama, kategori: kategori || 'Umum' });
                             count++;
                         }
                     });
-                    alert(`Sedang mengupload ${count} data ke server...`);
+                    alert(`Mengupload ${count} data ke Cloud... Tunggu sebentar.`);
                 };
                 reader.readAsText(file);
             };
 
-            // --- UI COMPONENTS ---
-
-            if (isLoadingData) return (
-                <div className="min-h-screen flex items-center justify-center bg-indigo-50">
-                    <div className="text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                        <p className="text-indigo-600 font-bold">Menghubungkan ke Server...</p>
-                    </div>
-                </div>
-            );
-
+            // --- HALAMAN UTAMA (MENU) ---
             if (view === 'menu') return (
-                <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-100 p-4 pt-8">
+                <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
                     <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
                         <div className="bg-indigo-700 p-6 text-center text-white relative">
                             <h1 className="text-2xl font-bold">Retreat GSM GKPS</h1>
-                            <p className="opacity-80">Tangerang - Cloud Sync</p>
-                            <div className="absolute top-4 right-4 bg-green-500 text-[10px] px-2 py-1 rounded-full animate-pulse">ONLINE</div>
+                            <p className="opacity-90 text-sm">Tangerang - Cloud System</p>
+                            <div className={`absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full font-bold ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}>
+                                {isConnected ? 'ONLINE' : 'CONNECTING...'}
+                            </div>
                         </div>
+
                         <div className="p-6">
-                            <div className="grid grid-cols-2 gap-4 mb-6">
-                                <div className="bg-indigo-50 p-3 rounded-xl text-center border border-indigo-200">
+                            <div className="flex gap-4 mb-6">
+                                <div className="flex-1 bg-indigo-50 p-3 rounded-xl text-center border border-indigo-200">
                                     <span className="text-xs text-indigo-600 font-bold uppercase">Terdaftar</span>
-                                    <p className="text-2xl font-black text-indigo-800">{participants.length}</p>
+                                    <p className="text-3xl font-black text-indigo-800">{participants.length}</p>
                                 </div>
-                                <div className="bg-green-50 p-3 rounded-xl text-center border border-green-200">
+                                <div className="flex-1 bg-green-50 p-3 rounded-xl text-center border border-green-200">
                                     <span className="text-xs text-green-600 font-bold uppercase">Hadir</span>
-                                    <p className="text-2xl font-black text-green-800">{attendance.length}</p>
+                                    <p className="text-3xl font-black text-green-800">{attendance.length}</p>
                                 </div>
                             </div>
-                            
+
                             <div className="space-y-3">
-                                <button onClick={() => setView('generate')} className="w-full bg-white border hover:border-indigo-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition">
-                                    <div className="bg-indigo-100 p-2 rounded text-indigo-600"><i data-lucide="qr-code"></i></div>
-                                    <div className="text-left"><h3 className="font-bold text-gray-700">Database & QR</h3><p className="text-xs text-gray-500">Kelola Data Cloud</p></div>
+                                <button onClick={() => setView('generate')} className="w-full bg-white border border-gray-200 hover:border-indigo-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition">
+                                    <div className="bg-indigo-100 p-2 rounded text-indigo-600"><i data-lucide="database"></i></div>
+                                    <div className="text-left"><h3 className="font-bold text-gray-700">Database & QR</h3><p className="text-xs text-gray-500">Kelola Peserta</p></div>
                                 </button>
-                                <button onClick={() => setView('scan')} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-xl flex items-center gap-3 shadow-lg transition">
+                                
+                                <button onClick={() => setView('scan')} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-xl flex items-center gap-3 shadow-lg transition transform active:scale-95">
                                     <div className="bg-white/20 p-2 rounded"><i data-lucide="camera"></i></div>
-                                    <div className="text-left"><h3 className="font-bold">Scan Absensi</h3><p className="text-xs text-indigo-200">Mode Panitia</p></div>
+                                    <div className="text-left"><h3 className="font-bold">Scan Absensi</h3><p className="text-xs text-indigo-200">Mode Kamera</p></div>
                                 </button>
-                                <button onClick={() => setView('report')} className="w-full bg-white border hover:border-orange-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition">
-                                    <div className="bg-orange-100 p-2 rounded text-orange-600"><i data-lucide="file-text"></i></div>
-                                    <div className="text-left"><h3 className="font-bold text-gray-700">Laporan</h3><p className="text-xs text-gray-500">Realtime Export</p></div>
+                                
+                                <button onClick={() => setView('report')} className="w-full bg-white border border-gray-200 hover:border-orange-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition">
+                                    <div className="bg-orange-100 p-2 rounded text-orange-600"><i data-lucide="file-spreadsheet"></i></div>
+                                    <div className="text-left"><h3 className="font-bold text-gray-700">Laporan</h3><p className="text-xs text-gray-500">Download CSV</p></div>
                                 </button>
                             </div>
-                            <button onClick={resetDataCloud} className="mt-8 text-xs text-red-400 flex items-center justify-center gap-1 w-full hover:text-red-600"><i data-lucide="trash-2" width="12"></i> Reset Database (Admin)</button>
+
+                            <div className="mt-8 pt-4 border-t border-gray-100 text-center">
+                                <button onClick={handleReset} className="text-xs text-red-400 hover:text-red-600 flex items-center justify-center gap-1 mx-auto">
+                                    <i data-lucide="trash-2" width="12"></i> Reset Database (Admin)
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             );
 
+            // --- HALAMAN DATABASE & QR ---
             if (view === 'generate') return (
-                <div className="min-h-screen bg-slate-50 p-4">
+                <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6">
-                            <h2 className="font-bold text-xl mb-4 text-indigo-800">Database Peserta</h2>
+                            <h2 className="font-bold text-xl mb-6 text-indigo-800 flex items-center gap-2"><i data-lucide="users"></i> Data Peserta</h2>
                             
                             <div className="mb-6 space-y-4">
-                                <div className="border-2 border-dashed border-slate-300 rounded-lg p-4 text-center relative hover:bg-slate-50">
-                                    <input type="file" accept=".csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
-                                    <i data-lucide="upload" className="mx-auto text-slate-400"></i>
-                                    <span className="text-sm font-bold text-indigo-600">Upload CSV ke Cloud</span>
+                                <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center relative hover:bg-slate-50 transition">
+                                    <input type="file" accept=".csv" onChange={handleCSV} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                    <i data-lucide="upload-cloud" className="mx-auto text-indigo-400 w-8 h-8 mb-2"></i>
+                                    <span className="text-sm font-bold text-indigo-600 block">Upload CSV ke Cloud</span>
+                                    <span className="text-xs text-gray-400">Format: Nama,Kategori</span>
                                 </div>
                                 
-                                <button onClick={() => setShowAddForm(!showAddForm)} className="text-sm font-bold text-indigo-600 hover:underline">+ Input Manual</button>
+                                <button onClick={() => setShowAddForm(!showAddForm)} className="w-full text-sm font-bold text-indigo-600 hover:bg-indigo-50 py-2 rounded transition">+ Input Manual</button>
+                                
                                 {showAddForm && (
-                                    <div className="bg-slate-50 p-3 rounded border">
-                                        <input className="w-full p-2 border rounded mb-2" placeholder="Nama" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
+                                    <div className="bg-slate-50 p-4 rounded border animate-bounce-in">
+                                        <input className="w-full p-2 border rounded mb-2" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
-                                            <option>Anak SM</option><option>GSM</option><option>Panitia</option><option>Umum</option>
+                                            <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
                                         </select>
                                         <button onClick={() => {
                                             if(!formData.nama) return;
-                                            saveParticipantToCloud({id: `M-${Date.now()}`, nama: formData.nama, kategori: formData.kategori});
-                                            setFormData({nama:'', kategori:'GSM'});
-                                        }} className="bg-indigo-600 text-white px-3 rounded w-full">Simpan ke Cloud</button>
+                                            const id = `M-${Date.now()}`;
+                                            saveToCloud(`participants/${id}`, {id, nama: formData.nama, kategori: formData.kategori});
+                                            setFormData({nama:'', kategori:'Anak Sekolah Minggu'});
+                                            alert("Tersimpan ke Cloud!");
+                                        }} className="bg-indigo-600 text-white px-3 py-2 rounded w-full font-bold">Simpan</button>
                                     </div>
                                 )}
                             </div>
 
                             {participants.length > 0 && (
-                                <button onClick={downloadAllQR} disabled={isDownloading} className="w-full bg-emerald-500 text-white py-3 rounded-xl font-bold mb-4 flex justify-center gap-2">
-                                    {isDownloading ? 'Downloading...' : <><i data-lucide="download"></i> Download Semua QR</>}
+                                <button onClick={downloadAllQR} disabled={isDownloading} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold mb-6 flex justify-center gap-2 transition">
+                                    {isDownloading ? 'Sedang Download...' : <><i data-lucide="download"></i> Download Semua QR</>}
                                 </button>
                             )}
 
                             <div className="grid grid-cols-2 gap-3">
                                 {participants.map(p => (
-                                    <div key={p.id} className="border p-2 rounded text-center bg-white shadow-sm">
-                                        <img src={generateQRCode(p.id)} className="w-24 mx-auto mb-1 mix-blend-multiply" loading="lazy"/>
-                                        <p className="font-bold text-xs truncate">{p.nama}</p>
-                                        <p className="text-[10px] text-gray-500">{p.kategori}</p>
+                                    <div key={p.id} className="border p-3 rounded text-center bg-white shadow-sm hover:shadow-md transition">
+                                        <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy"/>
+                                        <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
+                                        <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
                                     </div>
                                 ))}
                             </div>
@@ -345,37 +342,38 @@
                 </div>
             );
 
+            // --- HALAMAN SCANNER ---
             if (view === 'scan') return (
                 <div className="min-h-screen bg-black flex flex-col">
-                    <div className="p-4 bg-gray-900 text-white flex justify-between items-center z-10">
-                        <button onClick={() => setView('menu')} className="flex items-center gap-2"><i data-lucide="arrow-left"></i> Menu</button>
-                        <span className="font-bold">SCANNER</span>
-                        <div className="w-10"></div>
+                    <div className="p-4 bg-gray-900 text-white flex justify-between items-center z-10 shadow-lg">
+                        <button onClick={() => setView('menu')} className="flex items-center gap-2 text-gray-300 hover:text-white"><i data-lucide="arrow-left"></i> Menu</button>
+                        <span className="font-bold tracking-widest text-indigo-400">SCANNER</span>
+                        <div className="w-16"></div>
                     </div>
 
-                    <div className="flex-1 bg-black relative flex flex-col justify-center">
-                        <div className="w-full max-w-md mx-auto px-4">
-                            {!scanResult && <div id="reader" className="w-full bg-black rounded-lg overflow-hidden border-2 border-indigo-500"></div>}
+                    <div className="flex-1 bg-black relative flex flex-col justify-center items-center">
+                        <div className="w-full max-w-sm px-4">
+                            {!scanResult && <div id="reader" className="w-full bg-black rounded-xl overflow-hidden border-2 border-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.5)]"></div>}
                         </div>
 
                         {scanResult && (
                             <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-6 backdrop-blur-sm">
                                 <div className="bg-white w-full max-w-sm rounded-2xl p-6 text-center animate-bounce-in shadow-2xl">
                                     <div className="flex justify-center mb-4">
-                                        {scanResult.success ? <i data-lucide="check-circle" className="text-emerald-500 w-16 h-16"></i> : <i data-lucide="x-circle" className="text-red-500 w-16 h-16"></i>}
+                                        {scanResult.success ? <i data-lucide="check-circle" className="text-emerald-500 w-20 h-20"></i> : <i data-lucide="x-circle" className="text-red-500 w-20 h-20"></i>}
                                     </div>
                                     <h3 className={`text-2xl font-black mb-2 ${scanResult.success ? 'text-emerald-700' : 'text-red-600'}`}>{scanResult.success ? 'BERHASIL' : 'GAGAL'}</h3>
-                                    <p className="text-gray-600 font-medium mb-4">{scanResult.message}</p>
+                                    <p className="text-gray-600 font-medium mb-4">{scanResult.msg}</p>
                                     
                                     {scanResult.p && (
-                                        <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 mb-6">
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 shadow-inner">
                                             <h4 className="text-xl font-bold text-slate-800">{scanResult.p.nama}</h4>
                                             <span className="inline-block bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full mt-1 mb-2">{scanResult.p.kategori}</span>
-                                            <p className="text-xs text-slate-400 border-t border-slate-200 pt-2">{scanResult.timestamp}</p>
+                                            <p className="text-xs text-slate-400 border-t border-slate-200 pt-2">{scanResult.time}</p>
                                         </div>
                                     )}
 
-                                    <button onClick={() => { setScanResult(null); }} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition">Scan Berikutnya</button>
+                                    <button onClick={() => { setScanResult(null); }} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition">Scan Lagi</button>
                                 </div>
                             </div>
                         )}
@@ -383,25 +381,26 @@
                 </div>
             );
 
+            // --- HALAMAN LAPORAN ---
             if (view === 'report') return (
                 <div className="min-h-screen bg-orange-50 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow overflow-hidden">
                             <div className="p-4 border-b flex justify-between items-center bg-orange-50">
-                                <h2 className="font-bold text-orange-800">Laporan Realtime</h2>
+                                <h2 className="font-bold text-orange-800 flex items-center gap-2"><i data-lucide="clipboard-list"></i> Laporan Realtime</h2>
                                 <button onClick={() => {
                                     const csv = ['No,ID,Nama,Kategori,Waktu,Device', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.timestamp}",${a.device||'-'}`)].join('\n');
-                                    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = 'Laporan_Absensi_Cloud.csv'; link.click();
-                                }} className="bg-green-600 text-white text-xs px-3 py-1.5 rounded font-bold flex gap-1 items-center"><i data-lucide="download" width="12"></i> CSV</button>
+                                    const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = 'Laporan_Absensi_GKPS.csv'; link.click();
+                                }} className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-lg font-bold flex gap-1 items-center transition shadow-sm"><i data-lucide="download" width="14"></i> EXPORT CSV</button>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-gray-100 text-gray-500 font-medium text-xs uppercase"><tr><th className="p-3">No</th><th className="p-3">Nama</th><th className="p-3">Waktu</th></tr></thead>
-                                    <tbody className="divide-y">
+                                    <tbody className="divide-y divide-gray-100">
                                         {attendance.map((a, i) => (
-                                            <tr key={i} className="hover:bg-orange-50/50">
-                                                <td className="p-3 text-gray-400">{i+1}</td>
+                                            <tr key={i} className="hover:bg-orange-50/50 transition">
+                                                <td className="p-3 text-gray-400 font-mono">{i+1}</td>
                                                 <td className="p-3"><span className="font-bold text-gray-700 block">{a.nama}</span><span className="text-[10px] text-orange-500 bg-orange-100 px-1 rounded">{a.kategori}</span></td>
                                                 <td className="p-3 text-xs text-gray-500">{a.timestamp}</td>
                                             </tr>
@@ -416,7 +415,7 @@
         };
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<AttendanceSystem />);
+        root.render(<CloudAttendance />);
     </script>
 </body>
 </html>
