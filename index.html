@@ -7,8 +7,7 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>                    
-  
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
@@ -16,44 +15,40 @@
 
     <style>
         body { touch-action: manipulation; }
+        
+        /* Scanner Styles */
         #reader { border: none !important; }
         #reader__scan_region img { display: none; }
+        #reader video { object-fit: cover; border-radius: 12px; }
         
-        /* Sembunyikan tombol default scanner agar lebih rapi, kita pakai tombol custom jika perlu */
+        /* Sembunyikan tombol default scanner agar lebih rapi */
         #reader__dashboard_section_csr button { 
             background-color: #4F46E5; color: white; border-radius: 8px; padding: 5px 10px; 
             border: none; font-weight: bold; margin-top: 10px; cursor: pointer; width: 100%; font-size: 12px;
         }
         
-        /* Animasi Pop-up */
         .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
         @keyframes bounceIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 
-        /* MODIFIKASI: GARIS SCANNER BERJALAN */
+        /* GARIS SCANNER BERJALAN (LASER) */
         .scanner-line {
             position: absolute;
             width: 100%;
-            height: 3px;
+            height: 4px; /* Sedikit lebih tebal */
             background: #ef4444; /* Merah menyala */
-            box-shadow: 0 0 10px #ef4444;
+            box-shadow: 0 0 15px #ef4444; /* Glow effect */
             top: 0;
             left: 0;
             z-index: 50;
-            animation: scanning 2s infinite linear;
-            pointer-events: none; /* Agar klik tembus ke bawah */
+            animation: scanning 2s infinite ease-in-out;
+            pointer-events: none;
         }
         
         @keyframes scanning {
-            0% { top: 0%; opacity: 0.5; }
-            50% { opacity: 1; }
-            100% { top: 100%; opacity: 0.5; }
-        }
-        
-        /* Pastikan container reader relative agar garis bisa absolute di dalamnya */
-        .scanner-container {
-            position: relative;
-            overflow: hidden;
-            border-radius: 12px;
+            0% { top: 10%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 90%; opacity: 0; }
         }
     </style>
 
@@ -117,7 +112,10 @@
             const [editingMessageId, setEditingMessageId] = useState(null); 
             
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
+            
+            // Time dipecah jadi Start dan End
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', timeStart: '', timeEnd: '' });
+            
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
@@ -129,7 +127,7 @@
                 if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 if (currentUser) {
                     logoutTimerRef.current = setTimeout(() => {
-                        handleLogout(true); 
+                        handleLogout(true);
                     }, 60000);
                 }
             };
@@ -159,7 +157,7 @@
                 setEditingId(null);
                 setEditingMessageId(null);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
-                setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' }); 
+                setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
                 setSelfPassword('');
@@ -435,13 +433,11 @@
             const startEditSession = (s) => {
                 let start = s.timeStart || '';
                 let end = s.timeEnd || '';
-                
                 if (!start && s.time) {
                    const parts = s.time.split(' - ');
                    if(parts.length >= 1) start = parts[0].replace(' WIB','').trim();
                    if(parts.length >= 2) end = parts[1].replace(' WIB','').trim();
                 }
-
                 setSessionForm({
                     title: s.title || '',
                     date: s.date || '',
@@ -457,7 +453,7 @@
                 if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
                 const id = editingId || `RUN-${Date.now()}`;
                 saveToCloud(`rundown/${id}`, { id, completed: false, ...rundownForm });
-                setRundownForm({ date: '', time: '', activity: '' }); 
+                setRundownForm({ date: '', time: '', activity: '' }); 
                 setEditingId(null);
                 alert(editingId ? "Jadwal diupdate!" : "Jadwal ditambahkan!");
             };
@@ -498,7 +494,7 @@
                 return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
             };
 
-            // --- SCANNER LOGIC (MODIFIKASI SENSITIVITAS) ---
+            // --- SCANNER LOGIC ---
             useEffect(() => {
                 if (view === 'scan' && !scanResult) {
                     setTimeout(startScanner, 300);
@@ -507,16 +503,21 @@
             }, [view, scanResult]);
 
             const startScanner = () => {
-                if (scannerRef.current) scannerRef.current.clear().catch(()=>{});
-                // MODIFIKASI: fps naik ke 30, qrbox diset spesifik
+                if (scannerRef.current) {
+                    try { scannerRef.current.clear().catch(e => console.log(e)); } catch(e) {}
+                }
+                
+                // Pastikan element reader ada
+                if(!document.getElementById("reader")) return;
+
+                // FIX LAPTOP SCAN: Hapus aspectRatio, naikkan FPS
                 const scanner = new Html5QrcodeScanner("reader", { 
-                    fps: 30, 
+                    fps: 15, 
                     qrbox: 250,
-                    aspectRatio: 1.0,
-                    experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true
-                    }
+                    // aspectRatio tidak diset agar otomatis mengikuti kamera laptop (biasanya 16:9)
+                    experimentalFeatures: { useBarCodeDetectorIfSupported: true }
                 }, false);
+                
                 scanner.render((decodedText) => {
                     handleScanSuccess(decodedText);
                     scanner.clear(); 
@@ -756,6 +757,7 @@
                                         <span className="font-bold text-yellow-700">{m.sender} ({m.role})</span>
                                         <span>{m.timestamp}</span>
                                     </div>
+                                    
                                     <div className="flex gap-2 mt-2 justify-end">
                                         {m.senderUsername === currentUser.username && (
                                             <button onClick={() => startEditMessage(m)} className="text-blue-500 p-1 rounded hover:bg-blue-50"><i data-lucide="pencil" width="14"></i></button>
@@ -820,7 +822,6 @@
                 </div>
             );
 
-            // --- VIEW MODIFIKASI: MANAGE SESSIONS (MODERN TIME PICKER) ---
             if (view === 'manage_sessions') return (
                 <div key="view-manage_sessions" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -845,12 +846,12 @@
                                     </div>
                                     <div className="flex-1">
                                         <label className="text-xs font-bold text-gray-500 uppercase">Mulai</label>
-                                        <input type="time" className="w-full border p-2 rounded text-sm" 
+                                        <input type="time" className="w-full border p-2 rounded" 
                                             value={sessionForm.timeStart} onChange={e => setSessionForm({...sessionForm, timeStart: e.target.value})} />
                                     </div>
                                     <div className="flex-1">
                                         <label className="text-xs font-bold text-gray-500 uppercase">Selesai</label>
-                                        <input type="time" className="w-full border p-2 rounded text-sm" 
+                                        <input type="time" className="w-full border p-2 rounded" 
                                             value={sessionForm.timeEnd} onChange={e => setSessionForm({...sessionForm, timeEnd: e.target.value})} />
                                     </div>
                                 </div>
@@ -975,7 +976,6 @@
                                 ) : (
                                     <>
                                         <div id="reader"></div>
-                                        {/* MODIFIKASI: Garis Scan Berjalan */}
                                         <div className="scanner-line"></div>
                                     </>
                                 )}
@@ -1070,7 +1070,6 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<CloudAttendance />);
-                        
-  </script>
+    </script>
 </body>
 </html>
