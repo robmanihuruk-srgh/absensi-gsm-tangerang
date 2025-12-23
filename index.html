@@ -81,14 +81,17 @@
             
             // --- STATE MANAJEMEN ---
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
-            const [newSessionName, setNewSessionName] = useState('');
+            
+            // MODIFIKASI: State form sesi dipecah jadi 3 bagian
+            const [sessionForm, setSessionForm] = useState({
+                title: '', // Misal: Makan Pagi
+                date: '',  // Misal: 2026-01-17
+                time: ''   // Misal: 07:00 - 08:00
+            });
 
             const scannerRef = useRef(null);
 
             // --- FUNGSI NAVIGASI PINTAR (ULTIMATE SCROLL FIX) ---
-            
-            // 1. Hook ini berjalan SECARA SINKRON sebelum layar digambar ulang
-            // Ini memastikan scroll dipaksa naik SEBELUM user melihat halaman kosong
             useLayoutEffect(() => {
                 document.documentElement.scrollTop = 0;
                 document.body.scrollTop = 0;
@@ -100,10 +103,7 @@
             };
 
             const handleBackToMenu = () => {
-                // Force Scroll Langsung saat tombol ditekan
                 window.scrollTo(0, 0);
-                
-                // Cek Login
                 if (currentUser) {
                     setViewRaw('menu');
                 } else {
@@ -184,7 +184,6 @@
                 return () => unsub();
             }, [selectedSession]);
 
-            // Refresh Icons saat view berubah
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
             }, [view, scanResult, participants, users, sessions]);
@@ -204,7 +203,6 @@
                 }
             };
 
-            // --- FITUR RESET DATABASE (ADMIN) ---
             const handleResetAllData = () => {
                 const promptVal = prompt("PERINGATAN ADMIN!\n\nKetik 'HAPUS' untuk menghapus SEMUA Data Peserta & Absensi.\n(Data User & Sesi tidak akan dihapus)");
                 if (promptVal === 'HAPUS') {
@@ -247,13 +245,26 @@
                 alert("User berhasil ditambahkan!");
             };
 
+            // --- MODIFIKASI: HANDLE ADD SESSION DENGAN FORMAT BARU ---
             const handleAddSession = () => {
-                if(!newSessionName) return;
+                const { title, date, time } = sessionForm;
+                
+                if(!title || !date || !time) return alert("Mohon lengkapi Nama Kegiatan, Tanggal, dan Jam!");
+                
+                // Format Tanggal ke Bahasa Indonesia (Contoh: 17 Januari 2026)
+                const dateObj = new Date(date);
+                const formattedDate = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                
+                // Gabungkan menjadi Judul Sesi
+                // Format: "Sesi Makan Pagi, 17 Januari 2026 Jam 07 - 08 Wib"
+                const finalName = `${title}, ${formattedDate} Jam ${time} WIB`;
+
                 const id = `SESS-${Date.now()}`;
-                const sessData = { id, name: newSessionName, createdAt: Date.now() };
+                const sessData = { id, name: finalName, createdAt: Date.now() };
+                
                 saveToCloud(`sessions/${id}`, sessData);
-                setNewSessionName('');
-                alert("Sesi baru dibuat!");
+                setSessionForm({ title: '', date: '', time: '' }); // Reset Form
+                alert("Sesi baru berhasil dibuat!");
             };
 
             // --- SCANNER LOGIC ---
@@ -379,25 +390,21 @@
                 </div>
             );
 
-            // --- MENU UTAMA ---
-            const safeUser = currentUser || { nama: 'Petugas', role: 'petugas' };
-            const isAdmin = safeUser.role === 'admin';
-
             if (view === 'menu') return (
                 <div key="menu-view" className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
                     <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
                         <div className="bg-indigo-700 p-6 text-white relative">
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <h1 className="text-xl font-bold">Halo, {safeUser.nama}</h1>
-                                    <p className="opacity-80 text-xs uppercase tracking-wide bg-indigo-800 inline-block px-2 py-1 rounded mt-1">{safeUser.role}</p>
+                                    <h1 className="text-xl font-bold">Halo, {currentUser?.nama}</h1>
+                                    <p className="opacity-80 text-xs uppercase tracking-wide bg-indigo-800 inline-block px-2 py-1 rounded mt-1">{currentUser?.role}</p>
                                 </div>
                                 <button onClick={handleLogout} className="bg-indigo-800 hover:bg-red-500 p-2 rounded text-white text-xs transition"><i data-lucide="log-out" width="16"></i></button>
                             </div>
                         </div>
 
                         <div className="p-6 space-y-3">
-                            {isAdmin && (
+                            {currentUser?.role === 'admin' && (
                                 <>
                                     <div className="grid grid-cols-2 gap-3 mb-2">
                                         <button onClick={() => setView('manage_sessions')} className="bg-purple-100 hover:bg-purple-200 text-purple-800 p-3 rounded-xl text-sm font-bold flex flex-col items-center gap-1 border border-purple-200">
@@ -469,24 +476,48 @@
                 </div>
             );
 
+            // --- VIEW MODIFIED: MANAGE SESSIONS ---
             if (view === 'manage_sessions') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
                             <h2 className="font-bold text-lg mb-4 flex gap-2 items-center"><i data-lucide="calendar-plus"></i> Buat Sesi Baru</h2>
-                            <div className="flex gap-2">
-                                <input placeholder="Nama Sesi (mis: Ibadah Pagi)" className="flex-1 border p-2 rounded" value={newSessionName} onChange={e => setNewSessionName(e.target.value)} />
-                                <button onClick={handleAddSession} className="bg-purple-600 text-white p-2 rounded font-bold">Buat</button>
+                            
+                            {/* FORMULIR BARU DENGAN 3 INPUT */}
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">Nama Kegiatan</label>
+                                    <input placeholder="Contoh: Makan Pagi" className="w-full border p-2 rounded" 
+                                        value={sessionForm.title} onChange={e => setSessionForm({...sessionForm, title: e.target.value})} />
+                                </div>
+                                <div className="flex gap-2">
+                                    <div className="flex-1">
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Tanggal</label>
+                                        <input type="date" className="w-full border p-2 rounded" 
+                                            value={sessionForm.date} onChange={e => setSessionForm({...sessionForm, date: e.target.value})} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Jam / Waktu</label>
+                                        <input placeholder="07:00 - 08:00" className="w-full border p-2 rounded" 
+                                            value={sessionForm.time} onChange={e => setSessionForm({...sessionForm, time: e.target.value})} />
+                                    </div>
+                                </div>
+                                <button onClick={handleAddSession} className="w-full bg-purple-600 text-white p-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition">Buat Sesi</button>
                             </div>
                         </div>
+
                         <div className="space-y-2">
                             <h3 className="font-bold text-gray-600 ml-1">Daftar Sesi</h3>
                             {sessions.length === 0 && <p className="text-gray-400 text-center text-sm">Belum ada sesi dibuat.</p>}
                             {sessions.map(s => (
-                                <div key={s.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-purple-500">
-                                    <span className="font-bold text-slate-700">{s.name}</span>
-                                    <button onClick={() => deleteFromCloud(`sessions/${s.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2"></i></button>
+                                <div key={s.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-start border-l-4 border-purple-500">
+                                    <div>
+                                        {/* Tampilan nama sesi dipecah biar rapi (Opsional, saat ini menampilkan string penuh) */}
+                                        <span className="font-bold text-slate-700 block text-sm">{s.name}</span>
+                                    </div>
+                                    <button onClick={() => deleteFromCloud(`sessions/${s.id}`)} className="text-red-400 hover:text-red-600 ml-2"><i data-lucide="trash-2"></i></button>
                                 </div>
                             ))}
                         </div>
