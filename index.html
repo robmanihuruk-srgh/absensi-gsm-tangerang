@@ -84,16 +84,6 @@
 
             const scannerRef = useRef(null);
 
-            // --- FUNGSI AMAN UNTUK KEMBALI (FIX LAYAR ABU-ABU) ---
-            const handleBack = () => {
-                // Cek apakah user masih ada datanya. Jika tidak, lempar ke login agar tidak crash.
-                if (currentUser && currentUser.username) {
-                    setView('menu');
-                } else {
-                    setView('login');
-                }
-            };
-
             // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
                 // Init Icons dengan delay aman
@@ -103,16 +93,19 @@
                     if (!window.db) return;
                     setIsConnected(true);
 
+                    // 1. Load Users
                     const usersRef = window.dbRef(window.db, 'users');
                     window.dbOnValue(usersRef, (snapshot) => {
                         const data = snapshot.val();
                         if (!data) {
+                            // Auto Create Admin jika kosong
                             saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' });
                         } else {
                             setUsers(Object.values(data));
                         }
                     });
 
+                    // 2. Load Sessions
                     const sessRef = window.dbRef(window.db, 'sessions');
                     window.dbOnValue(sessRef, (snapshot) => {
                         const data = snapshot.val();
@@ -127,6 +120,7 @@
                         }
                     });
 
+                    // 3. Load Peserta
                     const pRef = window.dbRef(window.db, 'participants');
                     window.dbOnValue(pRef, (snapshot) => {
                         const data = snapshot.val();
@@ -138,6 +132,7 @@
                 return () => clearTimeout(initSync);
             }, []);
 
+            // 4. Load Kehadiran berdasarkan Session
             useEffect(() => {
                 if (!selectedSession || !window.db) return;
                 const attRef = window.dbRef(window.db, `attendance/${selectedSession}`);
@@ -148,7 +143,7 @@
                 return () => unsub();
             }, [selectedSession]);
 
-            // Re-render icons saat view berubah
+            // Refresh Icons saat pindah halaman
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
             }, [view, scanResult, participants, users, sessions]);
@@ -248,7 +243,7 @@
                 const newAtt = {
                     ...p,
                     timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-                    device: currentUser.username,
+                    device: currentUser?.username || 'Unknown',
                     sessionId: selectedSession
                 };
                 saveToCloud(`attendance/${selectedSession}/${p.id}`, newAtt);
@@ -327,21 +322,26 @@
                 </div>
             );
 
+            // --- MENU UTAMA ---
+            // Fix: Menambahkan fallback "|| {}" agar tidak crash jika currentUser null
+            const safeUser = currentUser || { nama: 'Petugas', role: 'petugas' };
+            const isAdmin = safeUser.role === 'admin';
+
             if (view === 'menu') return (
                 <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
                     <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
                         <div className="bg-indigo-700 p-6 text-white relative">
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <h1 className="text-xl font-bold">Halo, {currentUser?.nama || 'User'}</h1>
-                                    <p className="opacity-80 text-xs uppercase tracking-wide bg-indigo-800 inline-block px-2 py-1 rounded mt-1">{currentUser?.role || 'Guest'}</p>
+                                    <h1 className="text-xl font-bold">Halo, {safeUser.nama}</h1>
+                                    <p className="opacity-80 text-xs uppercase tracking-wide bg-indigo-800 inline-block px-2 py-1 rounded mt-1">{safeUser.role}</p>
                                 </div>
                                 <button onClick={handleLogout} className="bg-indigo-800 hover:bg-red-500 p-2 rounded text-white text-xs transition"><i data-lucide="log-out" width="16"></i></button>
                             </div>
                         </div>
 
                         <div className="p-6 space-y-3">
-                            {currentUser?.role === 'admin' && (
+                            {isAdmin && (
                                 <>
                                     <div className="grid grid-cols-2 gap-3 mb-2">
                                         <button onClick={() => setView('manage_sessions')} className="bg-purple-100 hover:bg-purple-200 text-purple-800 p-3 rounded-xl text-sm font-bold flex flex-col items-center gap-1 border border-purple-200">
@@ -375,7 +375,7 @@
             if (view === 'manage_users') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={handleBack} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
                             <h2 className="font-bold text-lg mb-4 flex gap-2 items-center"><i data-lucide="user-plus"></i> Tambah User</h2>
                             <div className="space-y-2">
@@ -411,7 +411,7 @@
             if (view === 'manage_sessions') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={handleBack} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
                             <h2 className="font-bold text-lg mb-4 flex gap-2 items-center"><i data-lucide="calendar-plus"></i> Buat Sesi Baru</h2>
                             <div className="flex gap-2">
@@ -436,7 +436,7 @@
             if (view === 'generate') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={handleBack} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6">
                             <h2 className="font-bold text-xl mb-6 text-indigo-800 flex items-center gap-2"><i data-lucide="users"></i> Data Peserta</h2>
                             
@@ -488,7 +488,7 @@
             if (view === 'scan') return (
                 <div className="min-h-screen bg-black flex flex-col">
                     <div className="p-4 bg-gray-900 text-white flex justify-between items-center z-10 shadow-lg">
-                        <button onClick={handleBack} className="flex items-center gap-2 text-gray-300 hover:text-white"><i data-lucide="arrow-left"></i> Menu</button>
+                        <button onClick={() => setView('menu')} className="flex items-center gap-2 text-gray-300 hover:text-white"><i data-lucide="arrow-left"></i> Menu</button>
                         <span className="font-bold tracking-widest text-indigo-400">SCANNER</span>
                         <div className="w-16"></div>
                     </div>
@@ -538,7 +538,7 @@
             if (view === 'report') return (
                 <div className="min-h-screen bg-orange-50 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={handleBack} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow overflow-hidden">
                             <div className="p-4 border-b bg-orange-50">
                                 <h2 className="font-bold text-orange-800 flex items-center gap-2 mb-3"><i data-lucide="clipboard-list"></i> Laporan Realtime</h2>
@@ -581,13 +581,14 @@
                 </div>
             );
 
-            // --- SAFETY NET (JIKA HALAMAN ERROR) ---
+            // --- JARING PENGAMAN (SAFETY NET) ---
+            // Jika terjadi error tampilan, ini yang akan muncul
             return (
                 <div className="min-h-screen flex items-center justify-center bg-gray-50 text-center p-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-400 mb-2">Terjadi Kesalahan Tampilan</h1>
-                        <p className="text-sm text-gray-400 mb-4">Halaman {view} tidak ditemukan atau sesi habis.</p>
-                        <button onClick={() => setView('login')} className="bg-indigo-600 text-white px-4 py-2 rounded">Muat Ulang (Reload)</button>
+                        <h1 className="text-2xl font-bold text-gray-400 mb-2">Memuat...</h1>
+                        <p className="text-sm text-gray-400 mb-4">Jika halaman tidak muncul, klik tombol di bawah.</p>
+                        <button onClick={() => window.location.reload()} className="bg-indigo-600 text-white px-4 py-2 rounded">Refresh Halaman</button>
                     </div>
                 </div>
             );
