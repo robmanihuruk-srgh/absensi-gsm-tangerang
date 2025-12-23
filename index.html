@@ -80,34 +80,35 @@
             const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu' });
             const [isDownloading, setIsDownloading] = useState(false);
             
-            // --- STATE MANAJEMEN ---
+            // --- STATE MANAJEMEN & EDITING ---
+            const [editingId, setEditingId] = useState(null); // ID item yang sedang diedit
+            
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
             const [newSessionName, setNewSessionName] = useState('');
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
-            
-            // MODIFIKASI: State Rundown ada Tanggalnya
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
 
             const scannerRef = useRef(null);
 
             // --- FUNGSI NAVIGASI PINTAR (ULTIMATE SCROLL FIX) ---
-            
-            // 1. Force Scroll ke atas setiap kali View berubah (Menggunakan behavior instant)
             useLayoutEffect(() => {
                 window.scrollTo({ top: 0, behavior: 'instant' });
-                document.body.scrollTop = 0; // Untuk Safari
-                document.documentElement.scrollTop = 0; // Untuk Chrome/FF
+                document.body.scrollTop = 0; 
+                document.documentElement.scrollTop = 0; 
             }, [view]);
 
             const setView = (newView) => {
+                // Reset state editing saat pindah halaman
+                setEditingId(null);
+                setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
+                setSessionForm({ title: '', date: '', time: '' });
+                setRundownForm({ date: '', time: '', activity: '' });
+                setFormData({ nama: '', kategori: 'Anak Sekolah Minggu' });
                 setViewRaw(newView);
             };
 
             const handleBackToMenu = () => {
-                // Force Scroll Langsung saat tombol ditekan
                 window.scrollTo({ top: 0, behavior: 'instant' });
-                
-                // Cek Login
                 if (currentUser) {
                     setViewRaw('menu');
                 } else {
@@ -139,7 +140,6 @@
                     if (!window.db) return;
                     setIsConnected(true);
 
-                    // 1. Load Users
                     const usersRef = window.dbRef(window.db, 'users');
                     window.dbOnValue(usersRef, (snapshot) => {
                         const data = snapshot.val();
@@ -150,7 +150,6 @@
                         }
                     });
 
-                    // 2. Load Sessions
                     const sessRef = window.dbRef(window.db, 'sessions');
                     window.dbOnValue(sessRef, (snapshot) => {
                         const data = snapshot.val();
@@ -165,14 +164,12 @@
                         }
                     });
 
-                    // 3. Load Peserta
                     const pRef = window.dbRef(window.db, 'participants');
                     window.dbOnValue(pRef, (snapshot) => {
                         const data = snapshot.val();
                         setParticipants(data ? Object.values(data) : []);
                     });
 
-                    // 4. Load Rundown
                     const rRef = window.dbRef(window.db, 'rundown');
                     window.dbOnValue(rRef, (snapshot) => {
                         const data = snapshot.val();
@@ -195,7 +192,6 @@
                 return () => clearTimeout(initSync);
             }, []);
 
-            // 5. Load Kehadiran
             useEffect(() => {
                 if (!selectedSession || !window.db) return;
                 const attRef = window.dbRef(window.db, `attendance/${selectedSession}`);
@@ -208,7 +204,7 @@
 
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
-            }, [view, scanResult, participants, users, sessions, rundown]);
+            }, [view, scanResult, participants, users, sessions, rundown, editingId]);
 
             // --- DATABASE ACTIONS ---
             const saveToCloud = (path, data) => {
@@ -260,14 +256,24 @@
                 }
             };
 
-            const handleAddUser = () => {
+            // --- USER MANAGEMENT (ADD & EDIT) ---
+            const handleAddOrUpdateUser = () => {
                 if(!newUser.username || !newUser.password) return alert("Lengkapi data user!");
+                
                 saveToCloud(`users/${newUser.username}`, newUser);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
-                alert("User berhasil ditambahkan!");
+                setEditingId(null); // Keluar mode edit
+                alert(editingId ? "User berhasil diupdate!" : "User berhasil ditambahkan!");
             };
 
-            const handleAddSession = () => {
+            const startEditUser = (u) => {
+                setNewUser(u);
+                setEditingId(u.username);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            // --- SESSION MANAGEMENT (ADD & EDIT) ---
+            const handleAddOrUpdateSession = () => {
                 const { title, date, time } = sessionForm;
                 if(!title || !date || !time) return alert("Mohon lengkapi Nama Kegiatan, Tanggal, dan Jam!");
                 
@@ -275,23 +281,63 @@
                 const formattedDate = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
                 const finalName = `${title}, ${formattedDate} Jam ${time} WIB`;
 
-                const id = `SESS-${Date.now()}`;
-                const sessData = { id, name: finalName, createdAt: Date.now() };
+                const id = editingId || `SESS-${Date.now()}`;
+                // Simpan data mentah juga agar bisa diedit kembali
+                const sessData = { id, name: finalName, title, date, time, createdAt: Date.now() };
                 
                 saveToCloud(`sessions/${id}`, sessData);
                 setSessionForm({ title: '', date: '', time: '' }); 
-                alert("Sesi baru berhasil dibuat!");
+                setEditingId(null);
+                alert(editingId ? "Sesi diupdate!" : "Sesi baru dibuat!");
             };
 
-            // --- HANDLE RUNDOWN ---
-            const handleAddRundown = () => {
+            const startEditSession = (s) => {
+                // Coba ambil data mentah, jika tidak ada (data lama), kosongkan atau parse manual
+                setSessionForm({
+                    title: s.title || '',
+                    date: s.date || '',
+                    time: s.time || ''
+                });
+                setEditingId(s.id);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            // --- RUNDOWN MANAGEMENT (ADD & EDIT) ---
+            const handleAddOrUpdateRundown = () => {
                 if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
-                const id = `RUN-${Date.now()}`;
+                
+                const id = editingId || `RUN-${Date.now()}`;
                 saveToCloud(`rundown/${id}`, { id, ...rundownForm });
                 setRundownForm({ date: '', time: '', activity: '' }); 
-                alert("Jadwal ditambahkan!");
+                setEditingId(null);
+                alert(editingId ? "Jadwal diupdate!" : "Jadwal ditambahkan!");
             };
 
+            const startEditRundown = (r) => {
+                setRundownForm({ date: r.date, time: r.time, activity: r.activity });
+                setEditingId(r.id);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            // --- PARTICIPANT MANAGEMENT (ADD & EDIT) ---
+            const handleAddOrUpdateParticipant = () => {
+                if(!formData.nama) return;
+                const id = editingId || `M-${Date.now()}`;
+                saveToCloud(`participants/${id}`, {id, nama: formData.nama, kategori: formData.kategori});
+                setFormData({nama:'', kategori:'Anak Sekolah Minggu'});
+                setEditingId(null);
+                if(editingId) setShowAddForm(false); // Tutup form jika selesai edit
+                alert("Tersimpan ke Cloud!");
+            };
+
+            const startEditParticipant = (p) => {
+                setFormData({ nama: p.nama, kategori: p.kategori });
+                setEditingId(p.id);
+                setShowAddForm(true); // Buka form
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            // Helper format tanggal
             const formatShortDate = (dateString) => {
                 if(!dateString) return '-';
                 const d = new Date(dateString);
@@ -486,30 +532,42 @@
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
-                            <h2 className="font-bold text-lg mb-4 flex gap-2 items-center"><i data-lucide="user-plus"></i> Tambah User</h2>
+                            <h2 className="font-bold text-lg mb-4 flex gap-2 items-center">
+                                {editingId ? <><i data-lucide="edit"></i> Edit User</> : <><i data-lucide="user-plus"></i> Tambah User</>}
+                            </h2>
                             <div className="space-y-2">
-                                <input placeholder="Username" className="w-full border p-2 rounded" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+                                {/* Username dikunci jika sedang edit */}
+                                <input placeholder="Username" disabled={!!editingId} className={`w-full border p-2 rounded ${editingId ? 'bg-gray-100 text-gray-500' : ''}`} value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
                                 <input placeholder="Password" className="w-full border p-2 rounded" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                                 <input placeholder="Nama Petugas" className="w-full border p-2 rounded" value={newUser.nama} onChange={e => setNewUser({...newUser, nama: e.target.value})} />
                                 <select className="w-full border p-2 rounded" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
                                     <option value="petugas">Petugas Scan</option>
                                     <option value="admin">Admin</option>
+                                    <option value="peserta">Peserta</option>
                                 </select>
-                                <button onClick={handleAddUser} className="w-full bg-blue-600 text-white p-2 rounded font-bold">Simpan User</button>
+                                <div className="flex gap-2">
+                                    <button onClick={handleAddOrUpdateUser} className={`flex-1 text-white p-2 rounded font-bold ${editingId ? 'bg-orange-500' : 'bg-blue-600'}`}>
+                                        {editingId ? 'Update' : 'Simpan User'}
+                                    </button>
+                                    {editingId && <button onClick={() => { setEditingId(null); setNewUser({ username: '', password: '', role: 'petugas', nama: '' }); }} className="bg-gray-400 text-white p-2 rounded font-bold">Batal</button>}
+                                </div>
                             </div>
                         </div>
 
                         <div className="space-y-2">
                             <h3 className="font-bold text-gray-600 ml-1">List User Terdaftar</h3>
                             {users.map(u => (
-                                <div key={u.username} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">
+                                <div key={u.username} className={`bg-white p-4 rounded-xl shadow-sm flex justify-between items-center ${editingId === u.username ? 'border-2 border-orange-400' : ''}`}>
                                     <div>
                                         <p className="font-bold">{u.username}</p>
                                         <p className="text-xs text-gray-500">{u.nama} ({u.role})</p>
                                     </div>
-                                    {u.username !== 'admin' && (
-                                        <button onClick={() => deleteFromCloud(`users/${u.username}`)} className="text-red-500"><i data-lucide="trash-2"></i></button>
-                                    )}
+                                    <div className="flex gap-2">
+                                        <button onClick={() => startEditUser(u)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
+                                        {u.username !== 'admin' && (
+                                            <button onClick={() => deleteFromCloud(`users/${u.username}`)} className="text-red-500"><i data-lucide="trash-2" width="16"></i></button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -523,9 +581,10 @@
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
-                            <h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700"><i data-lucide="list-plus"></i> Tambah Jadwal</h2>
+                            <h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700">
+                                {editingId ? <><i data-lucide="edit"></i> Edit Jadwal</> : <><i data-lucide="list-plus"></i> Tambah Jadwal</>}
+                            </h2>
                             
-                            {/* Input Tanggal, Jam, dan Kegiatan */}
                             <div className="space-y-2 mb-3">
                                 <div className="flex gap-2">
                                     <div className="flex-1">
@@ -546,14 +605,19 @@
                                 </div>
                             </div>
                             
-                            <button onClick={handleAddRundown} className="w-full bg-cyan-600 text-white p-2 rounded font-bold text-sm hover:bg-cyan-700 transition">Simpan Jadwal</button>
+                            <div className="flex gap-2">
+                                <button onClick={handleAddOrUpdateRundown} className={`flex-1 text-white p-2 rounded font-bold text-sm transition ${editingId ? 'bg-orange-500' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
+                                    {editingId ? 'Update Jadwal' : 'Simpan Jadwal'}
+                                </button>
+                                {editingId && <button onClick={() => { setEditingId(null); setRundownForm({ date: '', time: '', activity: '' }); }} className="bg-gray-400 text-white p-2 rounded font-bold text-sm">Batal</button>}
+                            </div>
                         </div>
 
                         <div className="space-y-2">
                             <h3 className="font-bold text-gray-600 ml-1">Rundown Acara</h3>
                             {rundown.length === 0 && <p className="text-gray-400 text-center text-sm italic">Belum ada jadwal.</p>}
                             {rundown.map(r => (
-                                <div key={r.id} className="bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-cyan-500">
+                                <div key={r.id} className={`bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 ${editingId === r.id ? 'border-orange-400 bg-orange-50' : 'border-cyan-500'}`}>
                                     <div className="flex gap-3 items-center">
                                         <div className="text-center bg-cyan-50 px-2 py-1 rounded border border-cyan-100">
                                             <span className="block text-[10px] text-cyan-600 font-bold uppercase">{formatShortDate(r.date)}</span>
@@ -561,7 +625,10 @@
                                         </div>
                                         <span className="font-bold text-slate-700 text-sm">{r.activity}</span>
                                     </div>
-                                    <button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600 ml-2"><i data-lucide="trash-2" width="16"></i></button>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => startEditRundown(r)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
+                                        <button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -575,7 +642,9 @@
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
-                            <h2 className="font-bold text-lg mb-4 flex gap-2 items-center"><i data-lucide="calendar-plus"></i> Buat Sesi Baru</h2>
+                            <h2 className="font-bold text-lg mb-4 flex gap-2 items-center">
+                                {editingId ? <><i data-lucide="edit"></i> Edit Sesi</> : <><i data-lucide="calendar-plus"></i> Buat Sesi Baru</>}
+                            </h2>
                             
                             <div className="space-y-3">
                                 <div>
@@ -595,7 +664,12 @@
                                             value={sessionForm.time} onChange={e => setSessionForm({...sessionForm, time: e.target.value})} />
                                     </div>
                                 </div>
-                                <button onClick={handleAddSession} className="w-full bg-purple-600 text-white p-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition">Buat Sesi</button>
+                                <div className="flex gap-2">
+                                    <button onClick={handleAddOrUpdateSession} className={`flex-1 text-white p-3 rounded-xl font-bold shadow-lg transition ${editingId ? 'bg-orange-500' : 'bg-purple-600 hover:bg-purple-700'}`}>
+                                        {editingId ? 'Update Sesi' : 'Buat Sesi'}
+                                    </button>
+                                    {editingId && <button onClick={() => { setEditingId(null); setSessionForm({ title: '', date: '', time: '' }); }} className="bg-gray-400 text-white p-3 rounded-xl font-bold">Batal</button>}
+                                </div>
                             </div>
                         </div>
 
@@ -603,11 +677,14 @@
                             <h3 className="font-bold text-gray-600 ml-1">Daftar Sesi</h3>
                             {sessions.length === 0 && <p className="text-gray-400 text-center text-sm">Belum ada sesi dibuat.</p>}
                             {sessions.map(s => (
-                                <div key={s.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-start border-l-4 border-purple-500">
+                                <div key={s.id} className={`bg-white p-4 rounded-xl shadow-sm flex justify-between items-start border-l-4 ${editingId === s.id ? 'border-orange-400 bg-orange-50' : 'border-purple-500'}`}>
                                     <div>
                                         <span className="font-bold text-slate-700 block text-sm">{s.name}</span>
                                     </div>
-                                    <button onClick={() => deleteFromCloud(`sessions/${s.id}`)} className="text-red-400 hover:text-red-600 ml-2"><i data-lucide="trash-2"></i></button>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => startEditSession(s)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
+                                        <button onClick={() => deleteFromCloud(`sessions/${s.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -633,17 +710,17 @@
                                 <button onClick={() => setShowAddForm(!showAddForm)} className="w-full text-sm font-bold text-indigo-600 hover:bg-indigo-50 py-2 rounded transition">+ Input Manual</button>
                                 {showAddForm && (
                                     <div className="bg-slate-50 p-4 rounded border animate-bounce-in">
+                                        <h3 className="font-bold text-xs mb-2 text-gray-500 uppercase">{editingId ? 'Edit Peserta' : 'Tambah Peserta'}</h3>
                                         <input className="w-full p-2 border rounded mb-2" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
                                             <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
                                         </select>
-                                        <button onClick={() => {
-                                            if(!formData.nama) return;
-                                            const id = `M-${Date.now()}`;
-                                            saveToCloud(`participants/${id}`, {id, nama: formData.nama, kategori: formData.kategori});
-                                            setFormData({nama:'', kategori:'Anak Sekolah Minggu'});
-                                            alert("Tersimpan ke Cloud!");
-                                        }} className="bg-indigo-600 text-white px-3 py-2 rounded w-full font-bold">Simpan</button>
+                                        <div className="flex gap-2">
+                                            <button onClick={handleAddOrUpdateParticipant} className={`flex-1 text-white px-3 py-2 rounded font-bold ${editingId ? 'bg-orange-500' : 'bg-indigo-600'}`}>
+                                                {editingId ? 'Update' : 'Simpan'}
+                                            </button>
+                                            {editingId && <button onClick={() => { setEditingId(null); setFormData({nama:'', kategori:'Anak Sekolah Minggu'}); setShowAddForm(false); }} className="bg-gray-400 text-white px-3 py-2 rounded">Batal</button>}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -656,7 +733,11 @@
 
                             <div className="grid grid-cols-2 gap-3">
                                 {participants.map(p => (
-                                    <div key={p.id} className="border p-3 rounded text-center bg-white shadow-sm hover:shadow-md transition">
+                                    <div key={p.id} className={`border p-3 rounded text-center bg-white shadow-sm hover:shadow-md transition relative ${editingId === p.id ? 'border-orange-400 bg-orange-50' : ''}`}>
+                                        <div className="absolute top-2 right-2 flex gap-1">
+                                            <button onClick={() => startEditParticipant(p)} className="text-blue-500 bg-blue-50 p-1 rounded hover:bg-blue-100"><i data-lucide="pencil" width="12"></i></button>
+                                            <button onClick={() => deleteFromCloud(`participants/${p.id}`)} className="text-red-500 bg-red-50 p-1 rounded hover:bg-red-100"><i data-lucide="trash-2" width="12"></i></button>
+                                        </div>
                                         <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy"/>
                                         <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
                                         <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
