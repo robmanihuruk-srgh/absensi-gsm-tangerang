@@ -84,19 +84,22 @@
 
             const scannerRef = useRef(null);
 
-            // --- FUNGSI NAVIGASI PINTAR ---
-            const setView = (newView) => {
-                // 1. Paksa Scroll ke Atas setiap ganti halaman (Mencegah layar abu-abu jika halaman sebelumnya panjang)
+            // --- SISTEM AUTO SCROLL (PERBAIKAN LAYAR ABU-ABU) ---
+            // Setiap kali 'view' berubah, paksa scroll ke paling atas
+            useEffect(() => {
                 window.scrollTo(0, 0);
-                // 2. Ganti Halaman
+                // Double check: Pastikan scroll naik setelah render selesai (delay 50ms)
+                const timer = setTimeout(() => window.scrollTo(0, 0), 50);
+                return () => clearTimeout(timer);
+            }, [view]);
+
+            const setView = (newView) => {
                 setViewRaw(newView);
             };
 
-            // PERBAIKAN UTAMA DI SINI:
-            // Fungsi ini disederhanakan agar PASTI kembali ke menu, tanpa syarat rumit.
             const handleBackToMenu = () => {
-                window.scrollTo(0, 0); // Pastikan scroll ke atas
-                setViewRaw('menu');    // Langsung paksa kembali ke Menu Awal
+                // Langsung set ke menu, useEffect di atas akan menangani scrollnya
+                setViewRaw('menu');
             };
 
             // --- REALTIME SYNC ENGINE ---
@@ -106,7 +109,7 @@
                 if (savedUser) {
                     try {
                         setCurrentUser(JSON.parse(savedUser));
-                        setViewRaw('menu'); // Gunakan setViewRaw agar tidak scroll otomatis saat init
+                        setViewRaw('menu'); 
                     } catch(e) {}
                 }
 
