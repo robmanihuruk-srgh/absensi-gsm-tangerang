@@ -88,7 +88,7 @@
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
 
-            // --- DATA STATIS KELAS (MODIFIKASI: UMUM DITAMBAHKAN) ---
+            // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
 
             const scannerRef = useRef(null);
@@ -316,12 +316,12 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- RUNDOWN MANAGEMENT ---
+            // --- RUNDOWN MANAGEMENT (MODIFIED: Checklist) ---
             const handleAddOrUpdateRundown = () => {
                 if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
                 
                 const id = editingId || `RUN-${Date.now()}`;
-                saveToCloud(`rundown/${id}`, { id, ...rundownForm });
+                saveToCloud(`rundown/${id}`, { id, completed: false, ...rundownForm });
                 setRundownForm({ date: '', time: '', activity: '' }); 
                 setEditingId(null);
                 alert(editingId ? "Jadwal diupdate!" : "Jadwal ditambahkan!");
@@ -331,6 +331,10 @@
                 setRundownForm({ date: r.date, time: r.time, activity: r.activity });
                 setEditingId(r.id);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const toggleRundownCheck = (r) => {
+                saveToCloud(`rundown/${r.id}`, { ...r, completed: !r.completed });
             };
 
             // --- PARTICIPANT MANAGEMENT ---
@@ -493,7 +497,12 @@
             // --- MENU UTAMA ---
             const safeUser = currentUser || { nama: 'Guest', role: 'peserta' };
             const isAdmin = safeUser.role === 'admin';
+            const isPanitia = safeUser.role === 'panitia';
+            const isPetugas = safeUser.role === 'petugas';
             const isPeserta = safeUser.role === 'peserta';
+
+            // Hak Akses Edit Rundown: Admin & Panitia
+            const canEditRundown = isAdmin || isPanitia;
 
             if (view === 'menu') return (
                 <div key="view-menu" className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
@@ -510,11 +519,13 @@
 
                         <div className="p-6 space-y-3">
                             
+                            {/* MENU RUNDOWN (SEMUA BISA AKSES) */}
                             <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                 <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                 <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
                             </button>
 
+                            {/* MENU UNTUK ADMIN, PANITIA, PETUGAS */}
                             {!isPeserta && (
                                 <>
                                     {isAdmin && (
@@ -535,6 +546,7 @@
                                         </button>
                                     )}
                                     
+                                    {/* Scan & Laporan untuk Admin, Panitia, Petugas */}
                                     <button onClick={() => setView('scan')} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-xl flex items-center gap-3 shadow-lg transition transform active:scale-95">
                                         <div className="bg-white/20 p-2 rounded"><i data-lucide="camera"></i></div>
                                         <div className="text-left"><h3 className="font-bold">Mulai Scan Absensi</h3><p className="text-xs text-indigo-200">Mode Kamera</p></div>
@@ -554,6 +566,7 @@
                                 </>
                             )}
 
+                            {/* FITUR GANTI PASSWORD (SEMUA BISA AKSES) */}
                             <button onClick={() => setView('change_password')} className="w-full bg-slate-100 border border-slate-200 hover:bg-slate-200 p-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition">
                                 <i data-lucide="lock" className="text-slate-500" width="16"></i>
                                 <span className="text-slate-600 font-bold text-xs">Ganti Password Saya</span>
@@ -564,6 +577,7 @@
                 </div>
             );
 
+            // --- VIEW: CHANGE SELF PASSWORD ---
             if (view === 'change_password') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -594,6 +608,7 @@
                                 <select className="w-full border p-2 rounded" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
                                     <option value="petugas">Petugas Scan</option>
                                     <option value="admin">Admin</option>
+                                    <option value="panitia">Panitia</option> {/* OPSI PANITIA DITAMBAHKAN */}
                                     <option value="peserta">Peserta (Hanya Lihat Rundown)</option>
                                 </select>
                                 <div className="flex gap-2">
@@ -631,7 +646,8 @@
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
-                        {!isPeserta && (
+                        {/* HANYA ADMIN & PANITIA YANG BISA TAMBAH/EDIT */}
+                        {canEditRundown && (
                             <div className="bg-white rounded-xl shadow p-6 mb-4">
                                 <h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700">
                                     {editingId ? <><i data-lucide="edit"></i> Edit Jadwal</> : <><i data-lucide="list-plus"></i> Tambah Jadwal</>}
@@ -670,16 +686,28 @@
                             <h3 className="font-bold text-gray-600 ml-1">Rundown Acara</h3>
                             {rundown.length === 0 && <p className="text-gray-400 text-center text-sm italic">Belum ada jadwal.</p>}
                             {rundown.map(r => (
-                                <div key={r.id} className={`bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 ${editingId === r.id ? 'border-orange-400 bg-orange-50' : 'border-cyan-500'}`}>
-                                    <div className="flex gap-3 items-center">
-                                        <div className="text-center bg-cyan-50 px-2 py-1 rounded border border-cyan-100">
-                                            <span className="block text-[10px] text-cyan-600 font-bold uppercase">{formatShortDate(r.date)}</span>
-                                            <span className="block text-sm font-black text-cyan-800">{r.time}</span>
+                                <div key={r.id} className={`bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 ${r.completed ? 'border-green-500 bg-green-50' : (editingId === r.id ? 'border-orange-400 bg-orange-50' : 'border-cyan-500')}`}>
+                                    <div className="flex gap-3 items-center flex-1">
+                                        {/* CHECKLIST (HANYA ADMIN & PANITIA) */}
+                                        {canEditRundown ? (
+                                            <button onClick={() => toggleRundownCheck(r)} className={`p-1 rounded ${r.completed ? 'text-green-600 bg-green-100' : 'text-gray-300 border border-gray-300'}`}>
+                                                {r.completed ? <i data-lucide="check-square" width="20"></i> : <i data-lucide="square" width="20"></i>}
+                                            </button>
+                                        ) : (
+                                            /* Petugas/Peserta hanya melihat status */
+                                            r.completed && <i data-lucide="check" className="text-green-500" width="16"></i>
+                                        )}
+
+                                        <div className="text-center bg-white/50 px-2 py-1 rounded border border-gray-100">
+                                            <span className="block text-[10px] text-gray-500 font-bold uppercase">{formatShortDate(r.date)}</span>
+                                            <span className="block text-sm font-black text-gray-800">{r.time}</span>
                                         </div>
-                                        <span className="font-bold text-slate-700 text-sm">{r.activity}</span>
+                                        <span className={`font-bold text-sm ${r.completed ? 'text-green-700 line-through decoration-2 opacity-70' : 'text-slate-700'}`}>{r.activity}</span>
                                     </div>
-                                    {!isPeserta && (
-                                        <div className="flex gap-2">
+                                    
+                                    {/* TOMBOL EDIT/HAPUS (HANYA ADMIN & PANITIA) */}
+                                    {canEditRundown && (
+                                        <div className="flex gap-2 ml-2">
                                             <button onClick={() => startEditRundown(r)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
                                             <button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button>
                                         </div>
