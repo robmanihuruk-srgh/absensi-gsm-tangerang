@@ -1,3 +1,7 @@
+//-- Saya ingin dengan kode dibawah ini , kamu lakukan modifikasi : --
+//-- 1. Agar Admin bisa mereset password semua user --
+//-- 2. Penambahan di kategori yaitu Kelas --
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -83,10 +87,9 @@
             const [editingId, setEditingId] = useState(null);
             
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
-            const [newSessionName, setNewSessionName] = useState('');
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
-            const [selfPassword, setSelfPassword] = useState(''); // State untuk ganti password sendiri
+            const [selfPassword, setSelfPassword] = useState('');
 
             const scannerRef = useRef(null);
 
@@ -258,13 +261,10 @@
                 }
             };
 
-            // --- FITUR GANTI PASSWORD SENDIRI ---
             const handleChangeSelfPassword = () => {
                 if(!selfPassword || selfPassword.length < 3) return alert("Password minimal 3 karakter!");
-                
                 const updatedUser = { ...currentUser, password: selfPassword };
                 saveToCloud(`users/${currentUser.username}`, updatedUser);
-                
                 setCurrentUser(updatedUser);
                 localStorage.setItem('gkps_user', JSON.stringify(updatedUser)); 
                 setSelfPassword('');
@@ -272,7 +272,7 @@
                 handleBackToMenu();
             };
 
-            // --- USER MANAGEMENT (ADD & EDIT - Admin Reset User Pass here) ---
+            // --- USER MANAGEMENT (ADD & EDIT / RESET PASS) ---
             const handleAddOrUpdateUser = () => {
                 if(!newUser.username || !newUser.password) return alert("Lengkapi data user!");
                 
@@ -333,7 +333,7 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- PARTICIPANT MANAGEMENT ---
+            // --- PARTICIPANT MANAGEMENT (KATEGORI: KELAS ADDED) ---
             const handleAddOrUpdateParticipant = () => {
                 if(!formData.nama) return;
                 const id = editingId || `M-${Date.now()}`;
@@ -766,6 +766,7 @@
                                         <input className="w-full p-2 border rounded mb-2" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
                                             <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
+                                            <option>Kelas</option> {/* PENAMBAHAN KATEGORI KELAS */}
                                         </select>
                                         <div className="flex gap-2">
                                             <button onClick={handleAddOrUpdateParticipant} className={`flex-1 text-white px-3 py-2 rounded font-bold ${editingId ? 'bg-orange-500' : 'bg-indigo-600'}`}>
