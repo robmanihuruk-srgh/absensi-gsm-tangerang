@@ -17,12 +17,43 @@
         body { touch-action: manipulation; }
         #reader { border: none !important; }
         #reader__scan_region img { display: none; }
+        
+        /* Sembunyikan tombol default scanner agar lebih rapi, kita pakai tombol custom jika perlu */
         #reader__dashboard_section_csr button { 
-            background-color: #4F46E5; color: white; border-radius: 8px; padding: 10px 20px; 
-            border: none; font-weight: bold; margin-top: 10px; cursor: pointer; width: 100%;
+            background-color: #4F46E5; color: white; border-radius: 8px; padding: 5px 10px; 
+            border: none; font-weight: bold; margin-top: 10px; cursor: pointer; width: 100%; font-size: 12px;
         }
+        
+        /* Animasi Pop-up */
         .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
         @keyframes bounceIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+        /* MODIFIKASI: GARIS SCANNER BERJALAN */
+        .scanner-line {
+            position: absolute;
+            width: 100%;
+            height: 3px;
+            background: #ef4444; /* Merah menyala */
+            box-shadow: 0 0 10px #ef4444;
+            top: 0;
+            left: 0;
+            z-index: 50;
+            animation: scanning 2s infinite linear;
+            pointer-events: none; /* Agar klik tembus ke bawah */
+        }
+        
+        @keyframes scanning {
+            0% { top: 0%; opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { top: 100%; opacity: 0.5; }
+        }
+        
+        /* Pastikan container reader relative agar garis bisa absolute di dalamnya */
+        .scanner-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 12px;
+        }
     </style>
 
     <script type="module">
@@ -58,7 +89,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // Gunakan useLayoutEffect untuk fix masalah scroll
         const { useState, useEffect, useLayoutEffect, useRef } = React;
 
         const CloudAttendance = () => {
@@ -86,10 +116,7 @@
             const [editingMessageId, setEditingMessageId] = useState(null); 
             
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
-            
-            // MODIFIKASI: Time dipecah jadi Start dan End
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', timeStart: '', timeEnd: '' });
-            
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
@@ -100,28 +127,22 @@
             const resetLogoutTimer = () => {
                 if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 if (currentUser) {
-                    // Set timer 1 menit (60000 ms)
                     logoutTimerRef.current = setTimeout(() => {
-                        handleLogout(true); // true = force logout without confirm
+                        handleLogout(true); 
                     }, 60000);
                 }
             };
 
-            // Pasang event listener untuk mendeteksi aktivitas
             useEffect(() => {
                 const events = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart'];
                 const handleActivity = () => resetLogoutTimer();
-
                 events.forEach(event => window.addEventListener(event, handleActivity));
-                
-                // Mulai timer awal
                 resetLogoutTimer();
-
                 return () => {
                     events.forEach(event => window.removeEventListener(event, handleActivity));
                     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 };
-            }, [currentUser]); // Reset listener saat user login/logout
+            }, [currentUser]);
 
             // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
@@ -137,8 +158,7 @@
                 setEditingId(null);
                 setEditingMessageId(null);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
-                // Reset session form
-                setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' });
+                setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' }); 
                 setRundownForm({ date: '', time: '', activity: '' });
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
                 setSelfPassword('');
@@ -190,7 +210,7 @@
                         }
                     });
 
-                    // 2. Load Sessions (MODIFIKASI: SORT BY DATE & TIME)
+                    // 2. Load Sessions
                     const sessRef = window.dbRef(window.db, 'sessions');
                     window.dbOnValue(sessRef, (snapshot) => {
                         const data = snapshot.val();
@@ -294,7 +314,6 @@
                 const username = e.target.username.value;
                 const password = e.target.password.value;
 
-                // MODIFIKASI: Backdoor Reset Admin
                 if (username === 'RESET' && password === 'GKPS2025') {
                     saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' });
                     alert("SUKSES: Password Admin telah direset menjadi 'admin123'. Silakan login.");
@@ -384,7 +403,7 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- SESSION MANAGEMENT (MODIFIKASI: MODERN TIME PICKER) ---
+            // --- SESSION MANAGEMENT ---
             const handleAddOrUpdateSession = () => {
                 const { title, date, timeStart, timeEnd } = sessionForm;
                 if(!title || !date || !timeStart || !timeEnd) return alert("Lengkapi Data Sesi!");
@@ -401,7 +420,7 @@
                     title, 
                     date, 
                     time: timeString, 
-                    timeStart, // Simpan mentahan untuk edit
+                    timeStart,
                     timeEnd, 
                     createdAt: Date.now() 
                 };
@@ -413,7 +432,6 @@
             };
 
             const startEditSession = (s) => {
-                // Backward compatibility untuk data lama yang belum punya timeStart/End
                 let start = s.timeStart || '';
                 let end = s.timeEnd || '';
                 
@@ -438,7 +456,7 @@
                 if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
                 const id = editingId || `RUN-${Date.now()}`;
                 saveToCloud(`rundown/${id}`, { id, completed: false, ...rundownForm });
-                setRundownForm({ date: '', time: '', activity: '' }); 
+                setRundownForm({ date: '', time: '', activity: '' }); 
                 setEditingId(null);
                 alert(editingId ? "Jadwal diupdate!" : "Jadwal ditambahkan!");
             };
@@ -479,7 +497,7 @@
                 return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
             };
 
-            // --- SCANNER LOGIC ---
+            // --- SCANNER LOGIC (MODIFIKASI SENSITIVITAS) ---
             useEffect(() => {
                 if (view === 'scan' && !scanResult) {
                     setTimeout(startScanner, 300);
@@ -489,7 +507,15 @@
 
             const startScanner = () => {
                 if (scannerRef.current) scannerRef.current.clear().catch(()=>{});
-                const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, aspectRatio: 1.0 }, false);
+                // MODIFIKASI: fps naik ke 30, qrbox diset spesifik
+                const scanner = new Html5QrcodeScanner("reader", { 
+                    fps: 30, 
+                    qrbox: 250,
+                    aspectRatio: 1.0,
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true
+                    }
+                }, false);
                 scanner.render((decodedText) => {
                     handleScanSuccess(decodedText);
                     scanner.clear(); 
@@ -692,7 +718,7 @@
                         <div className="bg-white rounded-xl shadow p-6">
                             <h2 className="font-bold text-lg mb-4 text-slate-700 flex gap-2"><i data-lucide="lock"></i> Ganti Password</h2>
                             <p className="text-sm text-gray-500 mb-4">Ubah password akun: <b>{currentUser?.username}</b></p>
-                            <input type="password" placeholder="Password Baru" className="w-full border p-3 rounded mb-4" 
+                            <input type="password" placeholder="Password Baru" className="w-full border p-3 rounded mb-4" 
                                 value={selfPassword} onChange={e => setSelfPassword(e.target.value)} />
                             <button onClick={handleChangeSelfPassword} className="w-full bg-indigo-600 text-white p-3 rounded font-bold hover:bg-indigo-700">Simpan Password Baru</button>
                         </div>
@@ -709,7 +735,7 @@
                             <h2 className="font-bold text-lg mb-4 text-yellow-600 flex gap-2">
                                 <i data-lucide="send"></i> {editingMessageId ? 'Edit Pesan' : 'Tulis Pesan & Kesan'}
                             </h2>
-                            <textarea placeholder="Tuliskan pengalaman atau masukan Anda..." className="w-full border p-3 rounded mb-2 h-24" 
+                            <textarea placeholder="Tuliskan pengalaman atau masukan Anda..." className="w-full border p-3 rounded mb-2 h-24" 
                                 value={messageInput} onChange={e => setMessageInput(e.target.value)}></textarea>
                             
                             <div className="flex gap-2">
@@ -818,12 +844,12 @@
                                     </div>
                                     <div className="flex-1">
                                         <label className="text-xs font-bold text-gray-500 uppercase">Mulai</label>
-                                        <input type="time" className="w-full border p-2 rounded" 
+                                        <input type="time" className="w-full border p-2 rounded text-sm" 
                                             value={sessionForm.timeStart} onChange={e => setSessionForm({...sessionForm, timeStart: e.target.value})} />
                                     </div>
                                     <div className="flex-1">
                                         <label className="text-xs font-bold text-gray-500 uppercase">Selesai</label>
-                                        <input type="time" className="w-full border p-2 rounded" 
+                                        <input type="time" className="w-full border p-2 rounded text-sm" 
                                             value={sessionForm.timeEnd} onChange={e => setSessionForm({...sessionForm, timeEnd: e.target.value})} />
                                     </div>
                                 </div>
@@ -939,14 +965,20 @@
                     </div>
                     <div className="flex-1 bg-black relative flex flex-col justify-center items-center">
                         <div className="w-full max-w-sm px-4">
-                            {!selectedSession ? (
-                                <div className="text-center text-gray-400 p-8 border border-gray-700 rounded-xl">
-                                    <i data-lucide="alert-triangle" className="mx-auto mb-2 text-yellow-500"></i>
-                                    <p>Mohon Pilih Sesi Kegiatan di atas untuk mulai scan.</p>
-                                </div>
-                            ) : (
-                                !scanResult && <div id="reader" className="w-full bg-black rounded-xl overflow-hidden border-2 border-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.5)]"></div>
-                            )}
+                            <div className="relative w-full bg-black rounded-xl overflow-hidden border-2 border-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.5)]">
+                                {!selectedSession ? (
+                                    <div className="text-center text-gray-400 p-8">
+                                        <i data-lucide="alert-triangle" className="mx-auto mb-2 text-yellow-500"></i>
+                                        <p>Mohon Pilih Sesi Kegiatan di atas untuk mulai scan.</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div id="reader"></div>
+                                        {/* MODIFIKASI: Garis Scan Berjalan */}
+                                        <div className="scanner-line"></div>
+                                    </>
+                                )}
+                            </div>
                         </div>
                         {scanResult && (
                             <div className="absolute inset-0 z-50 bg-black/80 flex items-center justify-center p-6 backdrop-blur-sm">
