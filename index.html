@@ -62,7 +62,7 @@
 
         const CloudAttendance = () => {
             // --- STATE UTAMA ---
-            const [view, setView] = useState('login'); 
+            const [view, setViewRaw] = useState('login'); 
             const [currentUser, setCurrentUser] = useState(null); 
             const [users, setUsers] = useState([]); 
             const [sessions, setSessions] = useState([]); 
@@ -84,8 +84,40 @@
 
             const scannerRef = useRef(null);
 
+            // --- FUNGSI NAVIGASI PINTAR (SOLUSI LAYAR ABU-ABU) ---
+            const setView = (newView) => {
+                // 1. Paksa Scroll ke Atas setiap ganti halaman
+                window.scrollTo(0, 0);
+                // 2. Ganti Halaman
+                setViewRaw(newView);
+            };
+
+            const handleBackToMenu = () => {
+                // Cek Login, jika hilang kembalikan via LocalStorage atau ke Login
+                if (currentUser) {
+                    setView('menu');
+                } else {
+                    const saved = localStorage.getItem('gkps_user');
+                    if (saved) {
+                        setCurrentUser(JSON.parse(saved));
+                        setView('menu');
+                    } else {
+                        setView('login');
+                    }
+                }
+            };
+
             // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
+                // Cek LocalStorage saat aplikasi mulai (Agar tidak logout sendiri)
+                const savedUser = localStorage.getItem('gkps_user');
+                if (savedUser) {
+                    try {
+                        setCurrentUser(JSON.parse(savedUser));
+                        setView('menu');
+                    } catch(e) {}
+                }
+
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 100);
                 
                 const initSync = setTimeout(() => {
@@ -141,7 +173,7 @@
                 return () => unsub();
             }, [selectedSession]);
 
-            // Refresh Icons
+            // Refresh Icons saat view berubah
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
             }, [view, scanResult, participants, users, sessions]);
@@ -173,17 +205,6 @@
                 }
             };
 
-            // --- NAVIGATION HELPER (FIX BACK BUTTON) ---
-            const handleBackToMenu = () => {
-                // Pastikan user masih login sebelum kembali ke menu
-                // Jika data user hilang (misal karena refresh), kembali ke login
-                if (currentUser && currentUser.username) {
-                    setView('menu');
-                } else {
-                    setView('login');
-                }
-            };
-
             // --- AUTHENTICATION ---
             const handleLogin = (e) => {
                 e.preventDefault();
@@ -193,6 +214,7 @@
                 const userFound = users.find(u => u.username === username && u.password === password);
                 if (userFound) {
                     setCurrentUser(userFound);
+                    localStorage.setItem('gkps_user', JSON.stringify(userFound)); // Simpan sesi
                     setView('menu');
                 } else {
                     alert("Username atau Password Salah!");
@@ -200,8 +222,11 @@
             };
 
             const handleLogout = () => {
-                setCurrentUser(null);
-                setView('login');
+                if(confirm("Keluar dari aplikasi?")) {
+                    setCurrentUser(null);
+                    localStorage.removeItem('gkps_user'); // Hapus sesi
+                    setView('login');
+                }
             };
 
             const handleAddUser = () => {
@@ -462,7 +487,6 @@
             if (view === 'generate') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
-                        {/* TOMBOL KEMBALI YANG SUDAH DIPERBAIKI */}
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
                         <div className="bg-white rounded-xl shadow p-6">
