@@ -84,37 +84,29 @@
 
             const scannerRef = useRef(null);
 
-            // --- FUNGSI NAVIGASI PINTAR (SOLUSI LAYAR ABU-ABU) ---
+            // --- FUNGSI NAVIGASI PINTAR ---
             const setView = (newView) => {
-                // 1. Paksa Scroll ke Atas setiap ganti halaman
+                // 1. Paksa Scroll ke Atas setiap ganti halaman (Mencegah layar abu-abu jika halaman sebelumnya panjang)
                 window.scrollTo(0, 0);
                 // 2. Ganti Halaman
                 setViewRaw(newView);
             };
 
+            // PERBAIKAN UTAMA DI SINI:
+            // Fungsi ini disederhanakan agar PASTI kembali ke menu, tanpa syarat rumit.
             const handleBackToMenu = () => {
-                // Cek Login, jika hilang kembalikan via LocalStorage atau ke Login
-                if (currentUser) {
-                    setView('menu');
-                } else {
-                    const saved = localStorage.getItem('gkps_user');
-                    if (saved) {
-                        setCurrentUser(JSON.parse(saved));
-                        setView('menu');
-                    } else {
-                        setView('login');
-                    }
-                }
+                window.scrollTo(0, 0); // Pastikan scroll ke atas
+                setViewRaw('menu');    // Langsung paksa kembali ke Menu Awal
             };
 
             // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
-                // Cek LocalStorage saat aplikasi mulai (Agar tidak logout sendiri)
+                // Cek LocalStorage saat aplikasi mulai
                 const savedUser = localStorage.getItem('gkps_user');
                 if (savedUser) {
                     try {
                         setCurrentUser(JSON.parse(savedUser));
-                        setView('menu');
+                        setViewRaw('menu'); // Gunakan setViewRaw agar tidak scroll otomatis saat init
                     } catch(e) {}
                 }
 
@@ -401,7 +393,7 @@
                                         <div className="text-left"><h3 className="font-bold text-gray-700">Database Peserta</h3><p className="text-xs text-gray-500">Import CSV / Generate QR</p></div>
                                     </button>
                                     
-                                    {/* TOMBOL RESET DATABASE (BARU) */}
+                                    {/* TOMBOL RESET DATABASE */}
                                     <button onClick={handleResetAllData} className="w-full bg-red-50 border border-red-200 hover:bg-red-100 p-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition">
                                         <i data-lucide="alert-octagon" className="text-red-500" width="16"></i>
                                         <span className="text-red-600 font-bold text-xs">RESET DATABASE (HAPUS SEMUA)</span>
