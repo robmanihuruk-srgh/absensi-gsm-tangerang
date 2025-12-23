@@ -69,6 +69,7 @@
             const [sessions, setSessions] = useState([]); 
             const [selectedSession, setSelectedSession] = useState(null); 
             const [rundown, setRundown] = useState([]); 
+            const [messages, setMessages] = useState([]); // State Pesan Kesan
             
             const [participants, setParticipants] = useState([]);
             const [attendance, setAttendance] = useState([]); 
@@ -87,6 +88,7 @@
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
+            const [messageInput, setMessageInput] = useState(''); // Input Pesan Kesan
 
             // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
@@ -105,6 +107,7 @@
                 setRundownForm({ date: '', time: '', activity: '' });
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
                 setSelfPassword('');
+                setMessageInput('');
                 setViewRaw(newView);
             };
 
@@ -192,6 +195,13 @@
                         }
                     });
 
+                    // 5. Load Messages (Pesan Kesan)
+                    const mRef = window.dbRef(window.db, 'messages');
+                    window.dbOnValue(mRef, (snapshot) => {
+                        const data = snapshot.val();
+                        setMessages(data ? Object.values(data).reverse() : []);
+                    });
+
                 }, 1000);
 
                 return () => clearTimeout(initSync);
@@ -209,7 +219,7 @@
 
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
-            }, [view, scanResult, participants, users, sessions, rundown, editingId]);
+            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages]);
 
             // --- DATABASE ACTIONS ---
             const saveToCloud = (path, data) => {
@@ -227,7 +237,7 @@
             };
 
             const handleResetAllData = () => {
-                const promptVal = prompt("PERINGATAN ADMIN!\n\nKetik 'HAPUS' untuk menghapus SEMUA Data Peserta & Absensi.\n(Data User, Sesi & Rundown TIDAK dihapus)");
+                const promptVal = prompt("PERINGATAN ADMIN!\n\nKetik 'HAPUS' untuk menghapus SEMUA Data Peserta & Absensi.\n(Data User, Sesi, Rundown & Pesan TIDAK dihapus)");
                 if (promptVal === 'HAPUS') {
                     window.dbRemove(window.dbRef(window.db, 'participants'));
                     window.dbRemove(window.dbRef(window.db, 'attendance'));
@@ -270,6 +280,22 @@
                 setSelfPassword('');
                 alert("Password berhasil diubah!");
                 handleBackToMenu();
+            };
+
+            // --- MESSAGES (PESAN & KESAN) ---
+            const handleSendMessage = () => {
+                if(!messageInput) return alert("Tuliskan pesan Anda!");
+                const id = `MSG-${Date.now()}`;
+                const msgData = {
+                    id,
+                    text: messageInput,
+                    sender: currentUser.nama || currentUser.username,
+                    role: currentUser.role,
+                    timestamp: new Date().toLocaleString('id-ID')
+                };
+                saveToCloud(`messages/${id}`, msgData);
+                setMessageInput('');
+                alert("Pesan terkirim!");
             };
 
             // --- USER MANAGEMENT ---
@@ -316,7 +342,7 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- RUNDOWN MANAGEMENT (MODIFIED: Checklist) ---
+            // --- RUNDOWN MANAGEMENT ---
             const handleAddOrUpdateRundown = () => {
                 if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
                 
@@ -410,7 +436,7 @@
                 const newAtt = {
                     ...p,
                     timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-                    device: currentUser?.username || 'Unknown',
+                    device: currentUser?.username || 'Unknown', // MODIFIKASI 1: Username Petugas sudah tersimpan disini
                     sessionId: selectedSession
                 };
                 saveToCloud(`attendance/${selectedSession}/${p.id}`, newAtt);
@@ -519,13 +545,17 @@
 
                         <div className="p-6 space-y-3">
                             
-                            {/* MENU RUNDOWN (SEMUA BISA AKSES) */}
                             <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                 <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                 <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
                             </button>
+                            
+                            {/* MODIFIKASI: TOMBOL PESAN & KESAN */}
+                            <button onClick={() => setView('messages')} className="w-full bg-yellow-50 border border-yellow-200 hover:border-yellow-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
+                                <div className="bg-yellow-100 p-2 rounded text-yellow-600"><i data-lucide="message-circle"></i></div>
+                                <div className="text-left"><h3 className="font-bold text-gray-700">Pesan & Kesan</h3><p className="text-xs text-gray-500">Kirim Masukan</p></div>
+                            </button>
 
-                            {/* MENU UNTUK ADMIN, PANITIA, PETUGAS */}
                             {!isPeserta && (
                                 <>
                                     {isAdmin && (
@@ -546,7 +576,6 @@
                                         </button>
                                     )}
                                     
-                                    {/* Scan & Laporan untuk Admin, Panitia, Petugas */}
                                     <button onClick={() => setView('scan')} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-4 rounded-xl flex items-center gap-3 shadow-lg transition transform active:scale-95">
                                         <div className="bg-white/20 p-2 rounded"><i data-lucide="camera"></i></div>
                                         <div className="text-left"><h3 className="font-bold">Mulai Scan Absensi</h3><p className="text-xs text-indigo-200">Mode Kamera</p></div>
@@ -566,7 +595,6 @@
                                 </>
                             )}
 
-                            {/* FITUR GANTI PASSWORD (SEMUA BISA AKSES) */}
                             <button onClick={() => setView('change_password')} className="w-full bg-slate-100 border border-slate-200 hover:bg-slate-200 p-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition">
                                 <i data-lucide="lock" className="text-slate-500" width="16"></i>
                                 <span className="text-slate-600 font-bold text-xs">Ganti Password Saya</span>
@@ -593,6 +621,47 @@
                 </div>
             );
 
+            // --- VIEW MODIFIKASI: PESAN & KESAN ---
+            if (view === 'messages') return (
+                <div className="min-h-screen bg-slate-100 p-4">
+                    <div className="max-w-md mx-auto">
+                        <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        
+                        {/* FORM KIRIM PESAN (SEMUA BISA) */}
+                        <div className="bg-white rounded-xl shadow p-6 mb-4">
+                            <h2 className="font-bold text-lg mb-4 text-yellow-600 flex gap-2"><i data-lucide="send"></i> Tulis Pesan & Kesan</h2>
+                            <textarea placeholder="Tuliskan pengalaman atau masukan Anda..." className="w-full border p-3 rounded mb-2 h-24" 
+                                value={messageInput} onChange={e => setMessageInput(e.target.value)}></textarea>
+                            <button onClick={handleSendMessage} className="w-full bg-yellow-500 text-white p-3 rounded font-bold hover:bg-yellow-600">Kirim Pesan</button>
+                        </div>
+
+                        {/* LIST PESAN (HANYA ADMIN & PANITIA YANG LIHAT SEMUA) */}
+                        {(isAdmin || isPanitia) && (
+                            <div className="space-y-3">
+                                <h3 className="font-bold text-gray-600 ml-1">Pesan Masuk ({messages.length})</h3>
+                                {messages.map(m => (
+                                    <div key={m.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-yellow-400">
+                                        <p className="text-sm text-gray-800 mb-2 whitespace-pre-wrap">"{m.text}"</p>
+                                        <div className="flex justify-between items-center text-xs text-gray-500 border-t pt-2 mt-2">
+                                            <span className="font-bold text-yellow-700">{m.sender} ({m.role})</span>
+                                            <span>{m.timestamp}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                                {messages.length === 0 && <p className="text-center text-gray-400 text-sm">Belum ada pesan.</p>}
+                            </div>
+                        )}
+                        
+                        {/* PESAN UNTUK PESERTA/PETUGAS */}
+                        {!(isAdmin || isPanitia) && (
+                            <div className="text-center text-gray-400 text-sm mt-4 italic">
+                                Terimakasih atas masukan Anda. Panitia akan membacanya.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+
             if (view === 'manage_users') return (
                 <div key="view-manage_users" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -608,7 +677,7 @@
                                 <select className="w-full border p-2 rounded" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
                                     <option value="petugas">Petugas Scan</option>
                                     <option value="admin">Admin</option>
-                                    <option value="panitia">Panitia</option> {/* OPSI PANITIA DITAMBAHKAN */}
+                                    <option value="panitia">Panitia</option>
                                     <option value="peserta">Peserta (Hanya Lihat Rundown)</option>
                                 </select>
                                 <div className="flex gap-2">
@@ -646,8 +715,7 @@
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
-                        {/* HANYA ADMIN & PANITIA YANG BISA TAMBAH/EDIT */}
-                        {canEditRundown && (
+                        {!isPeserta && (
                             <div className="bg-white rounded-xl shadow p-6 mb-4">
                                 <h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700">
                                     {editingId ? <><i data-lucide="edit"></i> Edit Jadwal</> : <><i data-lucide="list-plus"></i> Tambah Jadwal</>}
@@ -688,25 +756,21 @@
                             {rundown.map(r => (
                                 <div key={r.id} className={`bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 ${r.completed ? 'border-green-500 bg-green-50' : (editingId === r.id ? 'border-orange-400 bg-orange-50' : 'border-cyan-500')}`}>
                                     <div className="flex gap-3 items-center flex-1">
-                                        {/* CHECKLIST (HANYA ADMIN & PANITIA) */}
                                         {canEditRundown ? (
                                             <button onClick={() => toggleRundownCheck(r)} className={`p-1 rounded ${r.completed ? 'text-green-600 bg-green-100' : 'text-gray-300 border border-gray-300'}`}>
                                                 {r.completed ? <i data-lucide="check-square" width="20"></i> : <i data-lucide="square" width="20"></i>}
                                             </button>
                                         ) : (
-                                            /* Petugas/Peserta hanya melihat status */
                                             r.completed && <i data-lucide="check" className="text-green-500" width="16"></i>
                                         )}
 
                                         <div className="text-center bg-white/50 px-2 py-1 rounded border border-gray-100">
-                                            <span className="block text-[10px] text-gray-500 font-bold uppercase">{formatShortDate(r.date)}</span>
+                                            <span className="block text-[10px] text-cyan-600 font-bold uppercase">{formatShortDate(r.date)}</span>
                                             <span className="block text-sm font-black text-gray-800">{r.time}</span>
                                         </div>
                                         <span className={`font-bold text-sm ${r.completed ? 'text-green-700 line-through decoration-2 opacity-70' : 'text-slate-700'}`}>{r.activity}</span>
                                     </div>
-                                    
-                                    {/* TOMBOL EDIT/HAPUS (HANYA ADMIN & PANITIA) */}
-                                    {canEditRundown && (
+                                    {!isPeserta && (
                                         <div className="flex gap-2 ml-2">
                                             <button onClick={() => startEditRundown(r)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
                                             <button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button>
@@ -799,13 +863,10 @@
                                             <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
                                             <option>Kelas</option> 
                                         </select>
-
-                                        {/* MODIFIKASI: DROPDOWN KELAS */}
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kelas} onChange={e => setFormData({...formData, kelas: e.target.value})}>
                                             <option value="">-- Pilih Kelas --</option>
                                             {classList.map(c => <option key={c} value={c}>{c}</option>)}
                                         </select>
-                                        
                                         <div className="flex gap-2">
                                             <button onClick={handleAddOrUpdateParticipant} className={`flex-1 text-white px-3 py-2 rounded font-bold ${editingId ? 'bg-orange-500' : 'bg-indigo-600'}`}>
                                                 {editingId ? 'Update' : 'Simpan'}
@@ -832,8 +893,6 @@
                                         <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy"/>
                                         <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
                                         <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
-                                        
-                                        {/* MODIFIKASI: TAMPILAN KELAS UKURAN SM + MERAH TEBAL */}
                                         {p.kelas && <p className="text-sm font-black text-red-600 mt-1 uppercase tracking-tighter">{p.kelas}</p>}
                                     </div>
                                 ))}
@@ -882,10 +941,7 @@
                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 shadow-inner">
                                             <h4 className="text-xl font-bold text-slate-800">{scanResult.p.nama}</h4>
                                             <span className="inline-block bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full mt-1 mb-2">{scanResult.p.kategori}</span>
-                                            
-                                            {/* MODIFIKASI: TAMPILAN KELAS SAAT SCAN BERHASIL */}
                                             {scanResult.p.kelas && <div className="text-sm font-black text-red-600 uppercase mt-2 tracking-tighter">{scanResult.p.kelas}</div>}
-                                            
                                             <p className="text-xs text-slate-400 border-t border-slate-200 pt-2 mt-2">{scanResult.time}</p>
                                         </div>
                                     )}
@@ -913,6 +969,7 @@
                                 {selectedSession && (
                                     <button onClick={() => {
                                         const sessionName = getSessionName(selectedSession);
+                                        // MODIFIKASI: Username Petugas di Export CSV
                                         const csv = ['No,ID,Nama,Kategori,Kelas,Waktu,Petugas', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.kelas||'-'}", "${a.timestamp}",${a.device||'-'}`)].join('\n');
                                         const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = `Absensi_${sessionName}.csv`; link.click();
                                     }} className="w-full bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-lg font-bold flex justify-center gap-1 items-center transition shadow-sm"><i data-lucide="download" width="14"></i> EXPORT CSV SESI INI</button>
