@@ -58,6 +58,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // Gunakan useLayoutEffect untuk fix masalah scroll
         const { useState, useEffect, useLayoutEffect, useRef } = React;
 
         const CloudAttendance = () => {
@@ -67,7 +68,7 @@
             const [users, setUsers] = useState([]); 
             const [sessions, setSessions] = useState([]); 
             const [selectedSession, setSelectedSession] = useState(null); 
-            const [rundown, setRundown] = useState([]); // State untuk Rundown
+            const [rundown, setRundown] = useState([]); 
             
             const [participants, setParticipants] = useState([]);
             const [attendance, setAttendance] = useState([]); 
@@ -81,12 +82,15 @@
             
             // --- STATE MANAJEMEN ---
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
+            const [newSessionName, setNewSessionName] = useState('');
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
-            const [rundownForm, setRundownForm] = useState({ time: '', activity: '' }); // Form Rundown
+            
+            // MODIFIKASI: Menambahkan date pada state rundown
+            const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
 
             const scannerRef = useRef(null);
 
-            // --- FUNGSI NAVIGASI PINTAR (SCROLL FIX) ---
+            // --- FUNGSI NAVIGASI PINTAR (ULTIMATE SCROLL FIX) ---
             useLayoutEffect(() => {
                 document.documentElement.scrollTop = 0;
                 document.body.scrollTop = 0;
@@ -163,13 +167,16 @@
                         setParticipants(data ? Object.values(data) : []);
                     });
 
-                    // 4. Load Rundown (NEW)
+                    // 4. Load Rundown (MODIFIKASI SORTING)
                     const rRef = window.dbRef(window.db, 'rundown');
                     window.dbOnValue(rRef, (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
-                            // Sort berdasarkan jam
-                            const sortedRundown = Object.values(data).sort((a,b) => a.time.localeCompare(b.time));
+                            // Sort: Tanggal Dulu, Baru Jam
+                            const sortedRundown = Object.values(data).sort((a,b) => {
+                                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                                return a.time.localeCompare(b.time);
+                            });
                             setRundown(sortedRundown);
                         } else {
                             setRundown([]);
@@ -192,7 +199,6 @@
                 return () => unsub();
             }, [selectedSession]);
 
-            // Refresh Icons
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
             }, [view, scanResult, participants, users, sessions, rundown]);
@@ -247,7 +253,6 @@
                 }
             };
 
-            // --- ADD HANDLERS ---
             const handleAddUser = () => {
                 if(!newUser.username || !newUser.password) return alert("Lengkapi data user!");
                 saveToCloud(`users/${newUser.username}`, newUser);
@@ -271,13 +276,20 @@
                 alert("Sesi baru berhasil dibuat!");
             };
 
-            // --- HANDLE RUNDOWN (NEW) ---
+            // --- HANDLE RUNDOWN (MODIFIED: DATE INCLUDED) ---
             const handleAddRundown = () => {
-                if(!rundownForm.time || !rundownForm.activity) return alert("Lengkapi Jam dan Kegiatan!");
+                if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
                 const id = `RUN-${Date.now()}`;
                 saveToCloud(`rundown/${id}`, { id, ...rundownForm });
-                setRundownForm({ time: '', activity: '' });
+                setRundownForm({ date: '', time: '', activity: '' }); // Reset Form
                 alert("Jadwal ditambahkan!");
+            };
+
+            // Helper untuk format tanggal pendek di list
+            const formatShortDate = (dateString) => {
+                if(!dateString) return '';
+                const d = new Date(dateString);
+                return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }); // Contoh: 17 Jan
             };
 
             // --- SCANNER LOGIC ---
@@ -403,10 +415,6 @@
                 </div>
             );
 
-            // --- MENU UTAMA ---
-            const safeUser = currentUser || { nama: 'Petugas', role: 'petugas' };
-            const isAdmin = safeUser.role === 'admin';
-
             if (view === 'menu') return (
                 <div key="menu-view" className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
                     <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
@@ -432,7 +440,6 @@
                                         </button>
                                     </div>
                                     
-                                    {/* TOMBOL MODUL RUNDOWN ACARA (BARU) */}
                                     <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                         <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                         <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
@@ -500,7 +507,7 @@
                 </div>
             );
 
-            // --- VIEW MODUL RUNDOWN (BARU) ---
+            // --- VIEW MODUL RUNDOWN (MODIFIKASI: ADA TANGGAL) ---
             if (view === 'manage_rundown') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -508,12 +515,28 @@
                         
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
                             <h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700"><i data-lucide="list-plus"></i> Tambah Jadwal</h2>
-                            <div className="flex gap-2 mb-2">
-                                <input type="time" className="w-24 border p-2 rounded text-sm" 
-                                    value={rundownForm.time} onChange={e => setRundownForm({...rundownForm, time: e.target.value})} />
-                                <input placeholder="Nama Kegiatan / Acara" className="flex-1 border p-2 rounded text-sm" 
-                                    value={rundownForm.activity} onChange={e => setRundownForm({...rundownForm, activity: e.target.value})} />
+                            
+                            {/* Input Tanggal, Jam, dan Kegiatan */}
+                            <div className="space-y-2 mb-3">
+                                <div className="flex gap-2">
+                                    <div className="flex-1">
+                                        <label className="text-[10px] uppercase font-bold text-gray-500">Tanggal</label>
+                                        <input type="date" className="w-full border p-2 rounded text-sm" 
+                                            value={rundownForm.date} onChange={e => setRundownForm({...rundownForm, date: e.target.value})} />
+                                    </div>
+                                    <div className="w-24">
+                                        <label className="text-[10px] uppercase font-bold text-gray-500">Jam</label>
+                                        <input type="time" className="w-full border p-2 rounded text-sm" 
+                                            value={rundownForm.time} onChange={e => setRundownForm({...rundownForm, time: e.target.value})} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-gray-500">Nama Kegiatan</label>
+                                    <input placeholder="Contoh: Ibadah Pembuka" className="w-full border p-2 rounded text-sm" 
+                                        value={rundownForm.activity} onChange={e => setRundownForm({...rundownForm, activity: e.target.value})} />
+                                </div>
                             </div>
+                            
                             <button onClick={handleAddRundown} className="w-full bg-cyan-600 text-white p-2 rounded font-bold text-sm hover:bg-cyan-700 transition">Simpan Jadwal</button>
                         </div>
 
@@ -521,12 +544,15 @@
                             <h3 className="font-bold text-gray-600 ml-1">Rundown Acara</h3>
                             {rundown.length === 0 && <p className="text-gray-400 text-center text-sm italic">Belum ada jadwal.</p>}
                             {rundown.map(r => (
-                                <div key={r.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-cyan-500">
+                                <div key={r.id} className="bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-cyan-500">
                                     <div className="flex gap-3 items-center">
-                                        <span className="bg-cyan-100 text-cyan-800 text-xs font-bold px-2 py-1 rounded">{r.time}</span>
+                                        <div className="text-center bg-cyan-50 px-2 py-1 rounded border border-cyan-100">
+                                            <span className="block text-[10px] text-cyan-600 font-bold uppercase">{formatShortDate(r.date)}</span>
+                                            <span className="block text-sm font-black text-cyan-800">{r.time}</span>
+                                        </div>
                                         <span className="font-bold text-slate-700 text-sm">{r.activity}</span>
                                     </div>
-                                    <button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button>
+                                    <button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600 ml-2"><i data-lucide="trash-2" width="16"></i></button>
                                 </div>
                             ))}
                         </div>
