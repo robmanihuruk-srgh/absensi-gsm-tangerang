@@ -83,12 +83,42 @@
             
             // --- STATE MANAJEMEN & EDITING ---
             const [editingId, setEditingId] = useState(null);
+            const [editingMessageId, setEditingMessageId] = useState(null); // ID pesan yang sedang diedit
             
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
+
+            // --- AUTO LOGOUT (INACTIVITY TIMER) ---
+            const logoutTimerRef = useRef(null);
+
+            const resetLogoutTimer = () => {
+                if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+                if (currentUser) {
+                    // Set timer 1 menit (60000 ms)
+                    logoutTimerRef.current = setTimeout(() => {
+                        handleLogout(true); // true = force logout without confirm
+                    }, 60000);
+                }
+            };
+
+            // Pasang event listener untuk mendeteksi aktivitas
+            useEffect(() => {
+                const events = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+                const handleActivity = () => resetLogoutTimer();
+
+                events.forEach(event => window.addEventListener(event, handleActivity));
+                
+                // Mulai timer awal
+                resetLogoutTimer();
+
+                return () => {
+                    events.forEach(event => window.removeEventListener(event, handleActivity));
+                    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+                };
+            }, [currentUser]); // Reset listener saat user login/logout
 
             // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
@@ -102,6 +132,7 @@
 
             const setView = (newView) => {
                 setEditingId(null);
+                setEditingMessageId(null);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
@@ -155,13 +186,12 @@
                         }
                     });
 
-                    // 2. Load Sessions (MODIFIKASI: SORT BY DATE & TIME)
+                    // 2. Load Sessions
                     const sessRef = window.dbRef(window.db, 'sessions');
                     window.dbOnValue(sessRef, (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
                             const arr = Object.values(data);
-                            // Sort: Tanggal Dulu, Baru Jam
                             const sortedSessions = arr.sort((a,b) => {
                                 const dateA = a.date || ''; 
                                 const dateB = b.date || '';
@@ -169,8 +199,6 @@
                                 return (a.time || '').localeCompare(b.time || '');
                             });
                             setSessions(sortedSessions);
-                            
-                            // Set default selected session if needed
                             if (!selectedSession && sortedSessions.length > 0) {
                                 setSelectedSession(sortedSessions[0].id);
                             }
@@ -228,7 +256,7 @@
 
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
-            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages]);
+            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages, editingMessageId]);
 
             // --- DATABASE ACTIONS ---
             const saveToCloud = (path, data) => {
@@ -272,10 +300,11 @@
                 }
             };
 
-            const handleLogout = () => {
-                if(confirm("Keluar dari aplikasi?")) {
+            const handleLogout = (force = false) => {
+                if(force || confirm("Keluar dari aplikasi?")) {
                     setCurrentUser(null);
                     localStorage.removeItem('gkps_user'); 
+                    if(force) alert("Sesi berakhir karena tidak aktif selama 1 menit.");
                     setView('login');
                 }
             };
@@ -291,26 +320,50 @@
                 handleBackToMenu();
             };
 
-            // --- MESSAGES ---
+            // --- MESSAGES MANAGEMENT (MODIFIED) ---
             const handleSendMessage = () => {
                 if(!messageInput) return alert("Tuliskan pesan Anda!");
-                const id = `MSG-${Date.now()}`;
-                const msgData = {
-                    id,
-                    text: messageInput,
-                    sender: currentUser.nama || currentUser.username,
-                    role: currentUser.role,
-                    timestamp: new Date().toLocaleString('id-ID')
-                };
-                saveToCloud(`messages/${id}`, msgData);
+                
+                // Jika sedang mode edit
+                if (editingMessageId) {
+                    // Cari pesan lama untuk ambil data sender & timestamp asli jika perlu, atau update timestamp
+                    const msg = messages.find(m => m.id === editingMessageId);
+                    if(msg) {
+                        saveToCloud(`messages/${editingMessageId}`, { ...msg, text: messageInput });
+                        alert("Pesan diperbarui!");
+                    }
+                    setEditingMessageId(null);
+                } else {
+                    // Mode Tambah Baru
+                    const id = `MSG-${Date.now()}`;
+                    const msgData = {
+                        id,
+                        text: messageInput,
+                        sender: currentUser.nama || currentUser.username,
+                        senderUsername: currentUser.username, // Simpan username asli untuk validasi hak akses
+                        role: currentUser.role,
+                        timestamp: new Date().toLocaleString('id-ID')
+                    };
+                    saveToCloud(`messages/${id}`, msgData);
+                    alert("Pesan terkirim!");
+                }
                 setMessageInput('');
-                alert("Pesan terkirim!");
+            };
+
+            const startEditMessage = (m) => {
+                setMessageInput(m.text);
+                setEditingMessageId(m.id);
+                window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll ke input box
+            };
+
+            const cancelEditMessage = () => {
+                setMessageInput('');
+                setEditingMessageId(null);
             };
 
             // --- USER MANAGEMENT ---
             const handleAddOrUpdateUser = () => {
                 if(!newUser.username || !newUser.password) return alert("Lengkapi data user!");
-                
                 saveToCloud(`users/${newUser.username}`, newUser);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setEditingId(null); 
@@ -342,11 +395,7 @@
             };
 
             const startEditSession = (s) => {
-                setSessionForm({
-                    title: s.title || '',
-                    date: s.date || '',
-                    time: s.time || ''
-                });
+                setSessionForm({ title: s.title || '', date: s.date || '', time: s.time || '' });
                 setEditingId(s.id);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
@@ -354,7 +403,6 @@
             // --- RUNDOWN MANAGEMENT ---
             const handleAddOrUpdateRundown = () => {
                 if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
-                
                 const id = editingId || `RUN-${Date.now()}`;
                 saveToCloud(`rundown/${id}`, { id, completed: false, ...rundownForm });
                 setRundownForm({ date: '', time: '', activity: '' }); 
@@ -377,10 +425,7 @@
                 if(!formData.nama) return;
                 const id = editingId || `M-${Date.now()}`;
                 saveToCloud(`participants/${id}`, {
-                    id, 
-                    nama: formData.nama, 
-                    kategori: formData.kategori,
-                    kelas: formData.kelas 
+                    id, nama: formData.nama, kategori: formData.kategori, kelas: formData.kelas 
                 });
                 setFormData({nama:'', kategori:'Anak Sekolah Minggu', kelas: ''});
                 setEditingId(null);
@@ -445,7 +490,7 @@
                 const newAtt = {
                     ...p,
                     timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-                    device: currentUser?.username || 'Unknown',
+                    device: currentUser?.username || 'Unknown', 
                     sessionId: selectedSession
                 };
                 saveToCloud(`attendance/${selectedSession}/${p.id}`, newAtt);
@@ -489,10 +534,7 @@
                         if (nama) {
                             const id = `GSM-${Date.now()}-${idx}`;
                             saveToCloud(`participants/${id}`, { 
-                                id, 
-                                nama, 
-                                kategori: kategori || 'Umum', 
-                                kelas: kelas || '-'
+                                id, nama, kategori: kategori || 'Umum', kelas: kelas || '-'
                             });
                             count++;
                         }
@@ -533,10 +575,7 @@
             const safeUser = currentUser || { nama: 'Guest', role: 'peserta' };
             const isAdmin = safeUser.role === 'admin';
             const isPanitia = safeUser.role === 'panitia';
-            const isPetugas = safeUser.role === 'petugas';
             const isPeserta = safeUser.role === 'peserta';
-
-            // Hak Akses Edit Rundown: Admin & Panitia
             const canEditRundown = isAdmin || isPanitia;
 
             if (view === 'menu') return (
@@ -548,13 +587,11 @@
                                     <h1 className="text-xl font-bold">Halo, {safeUser.nama}</h1>
                                     <p className="opacity-80 text-xs uppercase tracking-wide bg-indigo-800 inline-block px-2 py-1 rounded mt-1">{safeUser.role}</p>
                                 </div>
-                                <button onClick={handleLogout} className="bg-indigo-800 hover:bg-red-500 p-2 rounded text-white text-xs transition"><i data-lucide="log-out" width="16"></i></button>
+                                <button onClick={() => handleLogout(false)} className="bg-indigo-800 hover:bg-red-500 p-2 rounded text-white text-xs transition"><i data-lucide="log-out" width="16"></i></button>
                             </div>
                         </div>
 
                         <div className="p-6 space-y-3">
-                            
-                            {/* SEMUA BISA AKSES: RUNDOWN & PESAN */}
                             <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                 <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                 <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
@@ -565,7 +602,6 @@
                                 <div className="text-left"><h3 className="font-bold text-gray-700">Pesan & Kesan</h3><p className="text-xs text-gray-500">Kirim Masukan</p></div>
                             </button>
 
-                            {/* MENU ADMIN & PETUGAS */}
                             {!isPeserta && (
                                 <>
                                     {isAdmin && (
@@ -631,42 +667,54 @@
                 </div>
             );
 
-            // --- VIEW: PESAN & KESAN ---
+            // --- VIEW MODIFIKASI: PESAN & KESAN (DENGAN EDIT/HAPUS) ---
             if (view === 'messages') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
-                            <h2 className="font-bold text-lg mb-4 text-yellow-600 flex gap-2"><i data-lucide="send"></i> Tulis Pesan & Kesan</h2>
+                            <h2 className="font-bold text-lg mb-4 text-yellow-600 flex gap-2">
+                                <i data-lucide="send"></i> {editingMessageId ? 'Edit Pesan' : 'Tulis Pesan & Kesan'}
+                            </h2>
                             <textarea placeholder="Tuliskan pengalaman atau masukan Anda..." className="w-full border p-3 rounded mb-2 h-24" 
                                 value={messageInput} onChange={e => setMessageInput(e.target.value)}></textarea>
-                            <button onClick={handleSendMessage} className="w-full bg-yellow-500 text-white p-3 rounded font-bold hover:bg-yellow-600">Kirim Pesan</button>
+                            
+                            <div className="flex gap-2">
+                                <button onClick={handleSendMessage} className={`flex-1 text-white p-3 rounded font-bold transition ${editingMessageId ? 'bg-orange-500' : 'bg-yellow-500 hover:bg-yellow-600'}`}>
+                                    {editingMessageId ? 'Update Pesan' : 'Kirim Pesan'}
+                                </button>
+                                {editingMessageId && <button onClick={cancelEditMessage} className="bg-gray-400 text-white p-3 rounded font-bold">Batal</button>}
+                            </div>
                         </div>
 
-                        {/* LIST PESAN UNTUK ADMIN/PANITIA */}
-                        {(isAdmin || isPanitia) && (
-                            <div className="space-y-3">
-                                <h3 className="font-bold text-gray-600 ml-1">Pesan Masuk ({messages.length})</h3>
-                                {messages.map(m => (
-                                    <div key={m.id} className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-yellow-400">
-                                        <p className="text-sm text-gray-800 mb-2 whitespace-pre-wrap">"{m.text}"</p>
-                                        <div className="flex justify-between items-center text-xs text-gray-500 border-t pt-2 mt-2">
-                                            <span className="font-bold text-yellow-700">{m.sender} ({m.role})</span>
-                                            <span>{m.timestamp}</span>
-                                        </div>
+                        <div className="space-y-3">
+                            <h3 className="font-bold text-gray-600 ml-1">Pesan Masuk ({messages.length})</h3>
+                            {messages.map(m => (
+                                <div key={m.id} className={`bg-white p-4 rounded-xl shadow-sm border-l-4 ${editingMessageId === m.id ? 'border-orange-500 bg-orange-50' : 'border-yellow-400'}`}>
+                                    <p className="text-sm text-gray-800 mb-2 whitespace-pre-wrap">"{m.text}"</p>
+                                    <div className="flex justify-between items-center text-xs text-gray-500 border-t pt-2 mt-2">
+                                        <span className="font-bold text-yellow-700">{m.sender} ({m.role})</span>
+                                        <span>{m.timestamp}</span>
                                     </div>
-                                ))}
-                                {messages.length === 0 && <p className="text-center text-gray-400 text-sm">Belum ada pesan.</p>}
-                            </div>
-                        )}
-                        
-                        {/* INFO UNTUK PESERTA */}
-                        {!(isAdmin || isPanitia) && (
-                            <div className="text-center text-gray-400 text-sm mt-4 italic">
-                                Terimakasih atas masukan Anda. Panitia akan membacanya.
-                            </div>
-                        )}
+                                    
+                                    {/* LOGIKA EDIT/HAPUS: 
+                                        - Admin/Panitia bisa Hapus semua pesan
+                                        - User bisa Edit & Hapus pesan miliknya sendiri (berdasarkan username)
+                                    */}
+                                    <div className="flex gap-2 mt-2 justify-end">
+                                        {m.senderUsername === currentUser.username && (
+                                            <button onClick={() => startEditMessage(m)} className="text-blue-500 p-1 rounded hover:bg-blue-50"><i data-lucide="pencil" width="14"></i></button>
+                                        )}
+                                        
+                                        {(isAdmin || isPanitia || m.senderUsername === currentUser.username) && (
+                                            <button onClick={() => deleteFromCloud(`messages/${m.id}`)} className="text-red-500 p-1 rounded hover:bg-red-50"><i data-lucide="trash-2" width="14"></i></button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {messages.length === 0 && <p className="text-center text-gray-400 text-sm">Belum ada pesan.</p>}
+                        </div>
                     </div>
                 </div>
             );
