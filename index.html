@@ -86,7 +86,6 @@
 
             // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
-                // Init Icons dengan delay aman
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 100);
                 
                 const initSync = setTimeout(() => {
@@ -98,7 +97,6 @@
                     window.dbOnValue(usersRef, (snapshot) => {
                         const data = snapshot.val();
                         if (!data) {
-                            // Auto Create Admin jika kosong
                             saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' });
                         } else {
                             setUsers(Object.values(data));
@@ -132,7 +130,7 @@
                 return () => clearTimeout(initSync);
             }, []);
 
-            // 4. Load Kehadiran berdasarkan Session
+            // 4. Load Kehadiran
             useEffect(() => {
                 if (!selectedSession || !window.db) return;
                 const attRef = window.dbRef(window.db, `attendance/${selectedSession}`);
@@ -143,7 +141,7 @@
                 return () => unsub();
             }, [selectedSession]);
 
-            // Refresh Icons saat pindah halaman
+            // Refresh Icons
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
             }, [view, scanResult, participants, users, sessions]);
@@ -160,6 +158,29 @@
                 if(confirm("Yakin ingin menghapus data ini?")) {
                     const ref = window.dbRef(window.db, path);
                     window.dbRemove(ref);
+                }
+            };
+
+            // --- FITUR RESET DATABASE (ADMIN) ---
+            const handleResetAllData = () => {
+                const promptVal = prompt("PERINGATAN ADMIN!\n\nKetik 'HAPUS' untuk menghapus SEMUA Data Peserta & Absensi.\n(Data User & Sesi tidak akan dihapus)");
+                if (promptVal === 'HAPUS') {
+                    window.dbRemove(window.dbRef(window.db, 'participants'));
+                    window.dbRemove(window.dbRef(window.db, 'attendance'));
+                    alert("DATABASE BERHASIL DIRESET/DIKOSONGKAN.");
+                } else {
+                    alert("Dibatalkan.");
+                }
+            };
+
+            // --- NAVIGATION HELPER (FIX BACK BUTTON) ---
+            const handleBackToMenu = () => {
+                // Pastikan user masih login sebelum kembali ke menu
+                // Jika data user hilang (misal karena refresh), kembali ke login
+                if (currentUser && currentUser.username) {
+                    setView('menu');
+                } else {
+                    setView('login');
                 }
             };
 
@@ -323,7 +344,6 @@
             );
 
             // --- MENU UTAMA ---
-            // Fix: Menambahkan fallback "|| {}" agar tidak crash jika currentUser null
             const safeUser = currentUser || { nama: 'Petugas', role: 'petugas' };
             const isAdmin = safeUser.role === 'admin';
 
@@ -355,6 +375,12 @@
                                         <div className="bg-indigo-100 p-2 rounded text-indigo-600"><i data-lucide="database"></i></div>
                                         <div className="text-left"><h3 className="font-bold text-gray-700">Database Peserta</h3><p className="text-xs text-gray-500">Import CSV / Generate QR</p></div>
                                     </button>
+                                    
+                                    {/* TOMBOL RESET DATABASE (BARU) */}
+                                    <button onClick={handleResetAllData} className="w-full bg-red-50 border border-red-200 hover:bg-red-100 p-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition">
+                                        <i data-lucide="alert-octagon" className="text-red-500" width="16"></i>
+                                        <span className="text-red-600 font-bold text-xs">RESET DATABASE (HAPUS SEMUA)</span>
+                                    </button>
                                 </>
                             )}
                             
@@ -375,7 +401,7 @@
             if (view === 'manage_users') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
                             <h2 className="font-bold text-lg mb-4 flex gap-2 items-center"><i data-lucide="user-plus"></i> Tambah User</h2>
                             <div className="space-y-2">
@@ -411,7 +437,7 @@
             if (view === 'manage_sessions') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
                             <h2 className="font-bold text-lg mb-4 flex gap-2 items-center"><i data-lucide="calendar-plus"></i> Buat Sesi Baru</h2>
                             <div className="flex gap-2">
@@ -436,7 +462,9 @@
             if (view === 'generate') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        {/* TOMBOL KEMBALI YANG SUDAH DIPERBAIKI */}
+                        <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        
                         <div className="bg-white rounded-xl shadow p-6">
                             <h2 className="font-bold text-xl mb-6 text-indigo-800 flex items-center gap-2"><i data-lucide="users"></i> Data Peserta</h2>
                             
@@ -488,7 +516,7 @@
             if (view === 'scan') return (
                 <div className="min-h-screen bg-black flex flex-col">
                     <div className="p-4 bg-gray-900 text-white flex justify-between items-center z-10 shadow-lg">
-                        <button onClick={() => setView('menu')} className="flex items-center gap-2 text-gray-300 hover:text-white"><i data-lucide="arrow-left"></i> Menu</button>
+                        <button onClick={handleBackToMenu} className="flex items-center gap-2 text-gray-300 hover:text-white"><i data-lucide="arrow-left"></i> Menu</button>
                         <span className="font-bold tracking-widest text-indigo-400">SCANNER</span>
                         <div className="w-16"></div>
                     </div>
@@ -538,7 +566,7 @@
             if (view === 'report') return (
                 <div className="min-h-screen bg-orange-50 p-4">
                     <div className="max-w-md mx-auto">
-                        <button onClick={() => setView('menu')} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
+                        <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow overflow-hidden">
                             <div className="p-4 border-b bg-orange-50">
                                 <h2 className="font-bold text-orange-800 flex items-center gap-2 mb-3"><i data-lucide="clipboard-list"></i> Laporan Realtime</h2>
@@ -582,7 +610,6 @@
             );
 
             // --- JARING PENGAMAN (SAFETY NET) ---
-            // Jika terjadi error tampilan, ini yang akan muncul
             return (
                 <div className="min-h-screen flex items-center justify-center bg-gray-50 text-center p-4">
                     <div>
