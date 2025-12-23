@@ -805,8 +805,8 @@
                                         <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
                                         <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
                                         
-                                        {/* MODIFIKASI: TAMPILAN KELAS */}
-                                        {p.kelas && <p className="text-sm font-bold text-red-600 mt-1 uppercase tracking-tighter">{p.kelas}</p>}
+                                        {/* MODIFIKASI: TAMPILAN KELAS UKURAN SM + MERAH TEBAL */}
+                                        {p.kelas && <p className="text-sm font-black text-red-600 mt-1 uppercase tracking-tighter">{p.kelas}</p>}
                                     </div>
                                 ))}
                             </div>
@@ -856,7 +856,7 @@
                                             <span className="inline-block bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full mt-1 mb-2">{scanResult.p.kategori}</span>
                                             
                                             {/* MODIFIKASI: TAMPILAN KELAS SAAT SCAN BERHASIL */}
-                                            {scanResult.p.kelas && <div className="text-sm font-bold text-red-600 uppercase mt-2 tracking-tighter">{scanResult.p.kelas}</div>}
+                                            {scanResult.p.kelas && <div className="text-sm font-black text-red-600 uppercase mt-2 tracking-tighter">{scanResult.p.kelas}</div>}
                                             
                                             <p className="text-xs text-slate-400 border-t border-slate-200 pt-2 mt-2">{scanResult.time}</p>
                                         </div>
