@@ -89,6 +89,7 @@
             
             // MODIFIKASI: Time dipecah jadi Start dan End
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', timeStart: '', timeEnd: '' });
+            
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
@@ -99,22 +100,28 @@
             const resetLogoutTimer = () => {
                 if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 if (currentUser) {
+                    // Set timer 1 menit (60000 ms)
                     logoutTimerRef.current = setTimeout(() => {
-                        handleLogout(true);
+                        handleLogout(true); // true = force logout without confirm
                     }, 60000);
                 }
             };
 
+            // Pasang event listener untuk mendeteksi aktivitas
             useEffect(() => {
                 const events = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart'];
                 const handleActivity = () => resetLogoutTimer();
+
                 events.forEach(event => window.addEventListener(event, handleActivity));
+                
+                // Mulai timer awal
                 resetLogoutTimer();
+
                 return () => {
                     events.forEach(event => window.removeEventListener(event, handleActivity));
                     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 };
-            }, [currentUser]);
+            }, [currentUser]); // Reset listener saat user login/logout
 
             // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
@@ -130,6 +137,7 @@
                 setEditingId(null);
                 setEditingMessageId(null);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
+                // Reset session form
                 setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
@@ -182,7 +190,7 @@
                         }
                     });
 
-                    // 2. Load Sessions
+                    // 2. Load Sessions (MODIFIKASI: SORT BY DATE & TIME)
                     const sessRef = window.dbRef(window.db, 'sessions');
                     window.dbOnValue(sessRef, (snapshot) => {
                         const data = snapshot.val();
@@ -289,7 +297,7 @@
                 // MODIFIKASI: Backdoor Reset Admin
                 if (username === 'RESET' && password === 'GKPS2025') {
                     saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' });
-                    alert("Password Admin telah direset menjadi: admin123");
+                    alert("SUKSES: Password Admin telah direset menjadi 'admin123'. Silakan login.");
                     return;
                 }
 
@@ -376,7 +384,7 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- SESSION MANAGEMENT (MODIFIED: MODERN TIME PICKER) ---
+            // --- SESSION MANAGEMENT (MODIFIKASI: MODERN TIME PICKER) ---
             const handleAddOrUpdateSession = () => {
                 const { title, date, timeStart, timeEnd } = sessionForm;
                 if(!title || !date || !timeStart || !timeEnd) return alert("Lengkapi Data Sesi!");
@@ -387,7 +395,16 @@
                 const finalName = `${title}, ${formattedDate} Jam ${timeString}`;
 
                 const id = editingId || `SESS-${Date.now()}`;
-                const sessData = { id, name: finalName, title, date, time: timeString, timeStart, timeEnd, createdAt: Date.now() };
+                const sessData = { 
+                    id, 
+                    name: finalName, 
+                    title, 
+                    date, 
+                    time: timeString, 
+                    timeStart, // Simpan mentahan untuk edit
+                    timeEnd, 
+                    createdAt: Date.now() 
+                };
                 
                 saveToCloud(`sessions/${id}`, sessData);
                 setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' }); 
@@ -396,12 +413,11 @@
             };
 
             const startEditSession = (s) => {
-                // Parse time string if timeStart/End not exists (backward compatibility)
+                // Backward compatibility untuk data lama yang belum punya timeStart/End
                 let start = s.timeStart || '';
                 let end = s.timeEnd || '';
                 
                 if (!start && s.time) {
-                   // Coba extract manual jika data lama
                    const parts = s.time.split(' - ');
                    if(parts.length >= 1) start = parts[0].replace(' WIB','').trim();
                    if(parts.length >= 2) end = parts[1].replace(' WIB','').trim();
@@ -584,6 +600,7 @@
                         <div className="mt-4 text-center text-xs text-gray-400">
                             {isConnected ? <span className="text-green-500">● Cloud Connected</span> : <span className="text-red-500">● Connecting...</span>}
                         </div>
+                        <p className="text-center text-[10px] text-gray-300 mt-2">Lupa Password? Hubungi Super Admin.</p>
                     </div>
                 </div>
             );
@@ -609,7 +626,6 @@
                         </div>
 
                         <div className="p-6 space-y-3">
-                            
                             <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                 <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                 <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
@@ -713,12 +729,10 @@
                                         <span className="font-bold text-yellow-700">{m.sender} ({m.role})</span>
                                         <span>{m.timestamp}</span>
                                     </div>
-                                    
                                     <div className="flex gap-2 mt-2 justify-end">
                                         {m.senderUsername === currentUser.username && (
                                             <button onClick={() => startEditMessage(m)} className="text-blue-500 p-1 rounded hover:bg-blue-50"><i data-lucide="pencil" width="14"></i></button>
                                         )}
-                                        
                                         {(isAdmin || isPanitia || m.senderUsername === currentUser.username) && (
                                             <button onClick={() => deleteFromCloud(`messages/${m.id}`)} className="text-red-500 p-1 rounded hover:bg-red-50"><i data-lucide="trash-2" width="14"></i></button>
                                         )}
@@ -779,79 +793,7 @@
                 </div>
             );
 
-            if (view === 'manage_rundown') return (
-                <div key="view-manage_rundown" className="min-h-screen bg-slate-100 p-4">
-                    <div className="max-w-md mx-auto">
-                        <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
-                        
-                        {!isPeserta && (
-                            <div className="bg-white rounded-xl shadow p-6 mb-4">
-                                <h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700">
-                                    {editingId ? <><i data-lucide="edit"></i> Edit Jadwal</> : <><i data-lucide="list-plus"></i> Tambah Jadwal</>}
-                                </h2>
-                                
-                                <div className="space-y-2 mb-3">
-                                    <div className="flex gap-2">
-                                        <div className="flex-1">
-                                            <label className="text-[10px] uppercase font-bold text-gray-500">Tanggal</label>
-                                            <input type="date" className="w-full border p-2 rounded text-sm" 
-                                                value={rundownForm.date} onChange={e => setRundownForm({...rundownForm, date: e.target.value})} />
-                                        </div>
-                                        <div className="w-24">
-                                            <label className="text-[10px] uppercase font-bold text-gray-500">Jam</label>
-                                            <input type="time" className="w-full border p-2 rounded text-sm" 
-                                                value={rundownForm.time} onChange={e => setRundownForm({...rundownForm, time: e.target.value})} />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] uppercase font-bold text-gray-500">Nama Kegiatan</label>
-                                        <input placeholder="Contoh: Ibadah Pembuka" className="w-full border p-2 rounded text-sm" 
-                                            value={rundownForm.activity} onChange={e => setRundownForm({...rundownForm, activity: e.target.value})} />
-                                    </div>
-                                </div>
-                                
-                                <div className="flex gap-2">
-                                    <button onClick={handleAddOrUpdateRundown} className={`flex-1 text-white p-2 rounded font-bold text-sm transition ${editingId ? 'bg-orange-500' : 'bg-cyan-600 hover:bg-cyan-700'}`}>
-                                        {editingId ? 'Update Jadwal' : 'Simpan Jadwal'}
-                                    </button>
-                                    {editingId && <button onClick={() => { setEditingId(null); setRundownForm({ date: '', time: '', activity: '' }); }} className="bg-gray-400 text-white p-2 rounded font-bold text-sm">Batal</button>}
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="space-y-2">
-                            <h3 className="font-bold text-gray-600 ml-1">Rundown Acara</h3>
-                            {rundown.length === 0 && <p className="text-gray-400 text-center text-sm italic">Belum ada jadwal.</p>}
-                            {rundown.map(r => (
-                                <div key={r.id} className={`bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 ${r.completed ? 'border-green-500 bg-green-50' : (editingId === r.id ? 'border-orange-400 bg-orange-50' : 'border-cyan-500')}`}>
-                                    <div className="flex gap-3 items-center flex-1">
-                                        {canEditRundown ? (
-                                            <button onClick={() => toggleRundownCheck(r)} className={`p-1 rounded ${r.completed ? 'text-green-600 bg-green-100' : 'text-gray-300 border border-gray-300'}`}>
-                                                {r.completed ? <i data-lucide="check-square" width="20"></i> : <i data-lucide="square" width="20"></i>}
-                                            </button>
-                                        ) : (
-                                            r.completed && <i data-lucide="check" className="text-green-500" width="16"></i>
-                                        )}
-
-                                        <div className="text-center bg-white/50 px-2 py-1 rounded border border-gray-100">
-                                            <span className="block text-[10px] text-cyan-600 font-bold uppercase">{formatShortDate(r.date)}</span>
-                                            <span className="block text-sm font-black text-gray-800">{r.time}</span>
-                                        </div>
-                                        <span className={`font-bold text-sm ${r.completed ? 'text-green-700 line-through decoration-2 opacity-70' : 'text-slate-700'}`}>{r.activity}</span>
-                                    </div>
-                                    {!isPeserta && (
-                                        <div className="flex gap-2 ml-2">
-                                            <button onClick={() => startEditRundown(r)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
-                                            <button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-
+            // --- VIEW MODIFIKASI: MANAGE SESSIONS (MODERN TIME PICKER) ---
             if (view === 'manage_sessions') return (
                 <div key="view-manage_sessions" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
