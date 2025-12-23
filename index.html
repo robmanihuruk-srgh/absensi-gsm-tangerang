@@ -77,7 +77,6 @@
             // --- STATE UI ---
             const [scanResult, setScanResult] = useState(null);
             const [showAddForm, setShowAddForm] = useState(false);
-            // MODIFIKASI: Menambahkan field 'kelas' pada form data
             const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
             const [isDownloading, setIsDownloading] = useState(false);
             
@@ -88,6 +87,9 @@
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
+
+            // --- DATA STATIS KELAS ---
+            const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI"];
 
             const scannerRef = useRef(null);
 
@@ -101,7 +103,6 @@
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
-                // Reset form data termasuk kelas
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
                 setSelfPassword('');
                 setViewRaw(newView);
@@ -332,16 +333,15 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- PARTICIPANT MANAGEMENT (MODIFIKASI: KELAS ADDED) ---
+            // --- PARTICIPANT MANAGEMENT (MODIFIKASI KELAS) ---
             const handleAddOrUpdateParticipant = () => {
                 if(!formData.nama) return;
                 const id = editingId || `M-${Date.now()}`;
-                // Simpan kelas juga
                 saveToCloud(`participants/${id}`, {
                     id, 
                     nama: formData.nama, 
                     kategori: formData.kategori,
-                    kelas: formData.kelas // Field baru
+                    kelas: formData.kelas 
                 });
                 setFormData({nama:'', kategori:'Anak Sekolah Minggu', kelas: ''});
                 setEditingId(null);
@@ -446,8 +446,6 @@
                     const lines = ev.target.result.split('\n').filter(l => l.trim());
                     let count = 0;
                     lines.slice(1).forEach((line, idx) => {
-                        // Modifikasi parsing CSV untuk mendukung kolom Kelas (opsional)
-                        // Format: Nama, Kategori, Kelas (opsional)
                         const [nama, kategori, kelas] = line.split(',').map(s => s?.trim());
                         if (nama) {
                             const id = `GSM-${Date.now()}-${idx}`;
@@ -455,7 +453,7 @@
                                 id, 
                                 nama, 
                                 kategori: kategori || 'Umum', 
-                                kelas: kelas || '-' // Default dash jika kosong
+                                kelas: kelas || '-'
                             });
                             count++;
                         }
@@ -512,13 +510,11 @@
 
                         <div className="p-6 space-y-3">
                             
-                            {/* MENU RUNDOWN (SEMUA BISA AKSES) */}
                             <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                 <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                 <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
                             </button>
 
-                            {/* MENU ADMIN & PETUGAS */}
                             {!isPeserta && (
                                 <>
                                     {isAdmin && (
@@ -558,7 +554,6 @@
                                 </>
                             )}
 
-                            {/* FITUR GANTI PASSWORD (SEMUA BISA AKSES) */}
                             <button onClick={() => setView('change_password')} className="w-full bg-slate-100 border border-slate-200 hover:bg-slate-200 p-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition">
                                 <i data-lucide="lock" className="text-slate-500" width="16"></i>
                                 <span className="text-slate-600 font-bold text-xs">Ganti Password Saya</span>
@@ -569,7 +564,6 @@
                 </div>
             );
 
-            // --- VIEW: CHANGE SELF PASSWORD ---
             if (view === 'change_password') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -585,7 +579,6 @@
                 </div>
             );
 
-            // --- VIEW: MANAGE USERS (ADMIN RESET PASSWORD PESERTA HERE) ---
             if (view === 'manage_users') return (
                 <div key="view-manage_users" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -638,7 +631,6 @@
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
-                        {/* HANYA ADMIN/PETUGAS YANG BISA EDIT RUNDOWN */}
                         {!isPeserta && (
                             <div className="bg-white rounded-xl shadow p-6 mb-4">
                                 <h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700">
@@ -686,7 +678,6 @@
                                         </div>
                                         <span className="font-bold text-slate-700 text-sm">{r.activity}</span>
                                     </div>
-                                    {/* PESERTA TIDAK BISA LIHAT TOMBOL EDIT/HAPUS */}
                                     {!isPeserta && (
                                         <div className="flex gap-2">
                                             <button onClick={() => startEditRundown(r)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
@@ -756,6 +747,7 @@
                 </div>
             );
 
+            // --- VIEW MODIFIKASI: GENERATE (DATABASE PESERTA) ---
             if (view === 'generate') return (
                 <div key="view-generate" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -775,14 +767,18 @@
                                 {showAddForm && (
                                     <div className="bg-slate-50 p-4 rounded border animate-bounce-in">
                                         <h3 className="font-bold text-xs mb-2 text-gray-500 uppercase">{editingId ? 'Edit Peserta' : 'Tambah Peserta'}</h3>
+                                        
                                         <input className="w-full p-2 border rounded mb-2" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
+                                        
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
                                             <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
-                                            <option>Kelas</option> {/* MODIFIKASI: KELAS ADDED */}
                                         </select>
-                                        
-                                        {/* MODIFIKASI: Input Kelas tambahan jika kategori kelas atau ingin manual */}
-                                        <input className="w-full p-2 border rounded mb-2" placeholder="Kelas (Opsional)" value={formData.kelas} onChange={e => setFormData({...formData, kelas: e.target.value})} />
+
+                                        {/* DROPDOWN KELAS (BARU) */}
+                                        <select className="w-full p-2 border rounded mb-2" value={formData.kelas} onChange={e => setFormData({...formData, kelas: e.target.value})}>
+                                            <option value="">-- Pilih Kelas --</option>
+                                            {classList.map(c => <option key={c} value={c}>{c}</option>)}
+                                        </select>
                                         
                                         <div className="flex gap-2">
                                             <button onClick={handleAddOrUpdateParticipant} className={`flex-1 text-white px-3 py-2 rounded font-bold ${editingId ? 'bg-orange-500' : 'bg-indigo-600'}`}>
@@ -809,8 +805,11 @@
                                         </div>
                                         <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy"/>
                                         <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
-                                        <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
-                                        <p className="text-[10px] font-bold text-indigo-600 mt-1">{p.kelas || '-'}</p> {/* TAMPILKAN KELAS */}
+                                        
+                                        <span className="text-[10px] text-gray-500 bg-gray-100 rounded px-2 py-0.5 inline-block mt-1">{p.kategori}</span>
+                                        
+                                        {/* TAMPILAN KELAS (MERAH, BESAR, TEBAL) */}
+                                        {p.kelas && <p className="text-xl font-black text-red-600 mt-1 uppercase tracking-tighter">{p.kelas}</p>}
                                     </div>
                                 ))}
                             </div>
@@ -858,7 +857,9 @@
                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 shadow-inner">
                                             <h4 className="text-xl font-bold text-slate-800">{scanResult.p.nama}</h4>
                                             <span className="inline-block bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full mt-1 mb-2">{scanResult.p.kategori}</span>
-                                            <p className="text-xs text-slate-400 border-t border-slate-200 pt-2">{scanResult.time}</p>
+                                            {/* TAMPILAN KELAS SAAT SCAN BERHASIL */}
+                                            {scanResult.p.kelas && <div className="text-2xl font-black text-red-600 uppercase mt-2">{scanResult.p.kelas}</div>}
+                                            <p className="text-xs text-slate-400 border-t border-slate-200 pt-2 mt-2">{scanResult.time}</p>
                                         </div>
                                     )}
                                     <button onClick={() => { setScanResult(null); }} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition">Scan Lagi</button>
@@ -885,7 +886,6 @@
                                 {selectedSession && (
                                     <button onClick={() => {
                                         const sessionName = getSessionName(selectedSession);
-                                        // MODIFIKASI: Export Kelas di CSV
                                         const csv = ['No,ID,Nama,Kategori,Kelas,Waktu,Petugas', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.kelas||'-'}", "${a.timestamp}",${a.device||'-'}`)].join('\n');
                                         const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = `Absensi_${sessionName}.csv`; link.click();
                                     }} className="w-full bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-lg font-bold flex justify-center gap-1 items-center transition shadow-sm"><i data-lucide="download" width="14"></i> EXPORT CSV SESI INI</button>
@@ -903,7 +903,11 @@
                                             {attendance.map((a, i) => (
                                                 <tr key={i} className="hover:bg-orange-50/50 transition">
                                                     <td className="p-3 text-gray-400 font-mono">{i+1}</td>
-                                                    <td className="p-3"><span className="font-bold text-gray-700 block">{a.nama}</span><span className="text-[10px] text-orange-500 bg-orange-100 px-1 rounded">{a.kategori}</span></td>
+                                                    <td className="p-3">
+                                                        <span className="font-bold text-gray-700 block">{a.nama}</span>
+                                                        <span className="text-[10px] text-orange-500 bg-orange-100 px-1 rounded mr-1">{a.kategori}</span>
+                                                        {a.kelas && <span className="text-[10px] text-white bg-red-500 px-1 rounded font-bold">{a.kelas}</span>}
+                                                    </td>
                                                     <td className="p-3 text-xs text-gray-500">{a.timestamp} <br/><span className="text-[9px] text-gray-400">by {a.device}</span></td>
                                                 </tr>
                                             ))}
