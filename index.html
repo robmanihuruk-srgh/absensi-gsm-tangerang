@@ -68,7 +68,7 @@
             const [users, setUsers] = useState([]); 
             const [sessions, setSessions] = useState([]); 
             const [selectedSession, setSelectedSession] = useState(null); 
-            const [rundown, setRundown] = useState([]); // State Rundown
+            const [rundown, setRundown] = useState([]); 
             
             const [participants, setParticipants] = useState([]);
             const [attendance, setAttendance] = useState([]); 
@@ -91,9 +91,12 @@
             const scannerRef = useRef(null);
 
             // --- FUNGSI NAVIGASI PINTAR (ULTIMATE SCROLL FIX) ---
-            // Hook ini memaksa scroll ke atas SETIAP KALI tampilan berubah
+            
+            // 1. Force Scroll ke atas setiap kali View berubah (Menggunakan behavior instant)
             useLayoutEffect(() => {
-                window.scrollTo(0, 0);
+                window.scrollTo({ top: 0, behavior: 'instant' });
+                document.body.scrollTop = 0; // Untuk Safari
+                document.documentElement.scrollTop = 0; // Untuk Chrome/FF
             }, [view]);
 
             const setView = (newView) => {
@@ -101,8 +104,10 @@
             };
 
             const handleBackToMenu = () => {
-                window.scrollTo(0, 0); // Paksa scroll
-                // Logika Back Aman
+                // Force Scroll Langsung saat tombol ditekan
+                window.scrollTo({ top: 0, behavior: 'instant' });
+                
+                // Cek Login
                 if (currentUser) {
                     setViewRaw('menu');
                 } else {
@@ -120,7 +125,6 @@
 
             // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
-                // Cek Login Tersimpan
                 const savedUser = localStorage.getItem('gkps_user');
                 if (savedUser) {
                     try {
@@ -168,13 +172,12 @@
                         setParticipants(data ? Object.values(data) : []);
                     });
 
-                    // 4. Load Rundown (DENGAN PERBAIKAN SORTING)
+                    // 4. Load Rundown
                     const rRef = window.dbRef(window.db, 'rundown');
                     window.dbOnValue(rRef, (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
                             const arr = Object.values(data);
-                            // Sort Aman: Cek dulu apakah date ada, kalau tidak pakai string kosong
                             const sortedRundown = arr.sort((a,b) => {
                                 const dateA = a.date || ''; 
                                 const dateB = b.date || '';
@@ -280,11 +283,10 @@
                 alert("Sesi baru berhasil dibuat!");
             };
 
-            // --- HANDLE RUNDOWN (ADD) ---
+            // --- HANDLE RUNDOWN ---
             const handleAddRundown = () => {
                 if(!rundownForm.date || !rundownForm.time || !rundownForm.activity) return alert("Lengkapi Tanggal, Jam dan Kegiatan!");
                 const id = `RUN-${Date.now()}`;
-                // Simpan ke Firebase
                 saveToCloud(`rundown/${id}`, { id, ...rundownForm });
                 setRundownForm({ date: '', time: '', activity: '' }); 
                 alert("Jadwal ditambahkan!");
@@ -293,7 +295,6 @@
             const formatShortDate = (dateString) => {
                 if(!dateString) return '-';
                 const d = new Date(dateString);
-                // Format: 17 Jan
                 return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
             };
 
@@ -396,7 +397,7 @@
             // --- VIEWS ---
 
             if (view === 'login') return (
-                <div className="min-h-screen bg-indigo-900 flex items-center justify-center p-4">
+                <div key="view-login" className="min-h-screen bg-indigo-900 flex items-center justify-center p-4">
                     <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm animate-bounce-in">
                         <div className="text-center mb-6">
                             <h1 className="text-2xl font-bold text-indigo-800">System Login</h1>
@@ -425,7 +426,7 @@
             const isAdmin = safeUser.role === 'admin';
 
             if (view === 'menu') return (
-                <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
+                <div key="view-menu" className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
                     <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
                         <div className="bg-indigo-700 p-6 text-white relative">
                             <div className="flex justify-between items-start">
@@ -449,7 +450,6 @@
                                         </button>
                                     </div>
                                     
-                                    {/* TOMBOL RUNDOWN (BARU) */}
                                     <button onClick={() => setView('manage_rundown')} className="w-full bg-cyan-50 border border-cyan-200 hover:border-cyan-500 p-4 rounded-xl flex items-center gap-3 shadow-sm group transition mb-2">
                                         <div className="bg-cyan-100 p-2 rounded text-cyan-600"><i data-lucide="list-clock"></i></div>
                                         <div className="text-left"><h3 className="font-bold text-gray-700">Rundown Acara</h3><p className="text-xs text-gray-500">Jadwal Kegiatan</p></div>
@@ -482,7 +482,7 @@
             );
 
             if (view === 'manage_users') return (
-                <div className="min-h-screen bg-slate-100 p-4">
+                <div key="view-manage_users" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow p-6 mb-4">
@@ -517,9 +517,8 @@
                 </div>
             );
 
-            // --- VIEW RUNDOWN (YANG SUDAH DIPERBAIKI) ---
             if (view === 'manage_rundown') return (
-                <div className="min-h-screen bg-slate-100 p-4">
+                <div key="view-manage_rundown" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
@@ -571,7 +570,7 @@
             );
 
             if (view === 'manage_sessions') return (
-                <div className="min-h-screen bg-slate-100 p-4">
+                <div key="view-manage_sessions" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
@@ -617,7 +616,7 @@
             );
 
             if (view === 'generate') return (
-                <div className="min-h-screen bg-slate-100 p-4">
+                <div key="view-generate" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         
@@ -670,7 +669,7 @@
             );
 
             if (view === 'scan') return (
-                <div className="min-h-screen bg-black flex flex-col">
+                <div key="view-scan" className="min-h-screen bg-black flex flex-col">
                     <div className="p-4 bg-gray-900 text-white flex justify-between items-center z-10 shadow-lg">
                         <button onClick={handleBackToMenu} className="flex items-center gap-2 text-gray-300 hover:text-white"><i data-lucide="arrow-left"></i> Menu</button>
                         <span className="font-bold tracking-widest text-indigo-400">SCANNER</span>
@@ -720,7 +719,7 @@
             );
 
             if (view === 'report') return (
-                <div className="min-h-screen bg-orange-50 p-4">
+                <div key="view-report" className="min-h-screen bg-orange-50 p-4">
                     <div className="max-w-md mx-auto">
                         <button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>
                         <div className="bg-white rounded-xl shadow overflow-hidden">
