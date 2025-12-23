@@ -88,8 +88,8 @@
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
 
-            // --- DATA STATIS KELAS ---
-            const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI"];
+            // --- DATA STATIS KELAS (MODIFIKASI: UMUM DITAMBAHKAN) ---
+            const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
 
             const scannerRef = useRef(null);
 
@@ -333,7 +333,7 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- PARTICIPANT MANAGEMENT (MODIFIKASI KELAS) ---
+            // --- PARTICIPANT MANAGEMENT ---
             const handleAddOrUpdateParticipant = () => {
                 if(!formData.nama) return;
                 const id = editingId || `M-${Date.now()}`;
@@ -747,7 +747,6 @@
                 </div>
             );
 
-            // --- VIEW MODIFIKASI: GENERATE (DATABASE PESERTA) ---
             if (view === 'generate') return (
                 <div key="view-generate" className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -767,14 +766,13 @@
                                 {showAddForm && (
                                     <div className="bg-slate-50 p-4 rounded border animate-bounce-in">
                                         <h3 className="font-bold text-xs mb-2 text-gray-500 uppercase">{editingId ? 'Edit Peserta' : 'Tambah Peserta'}</h3>
-                                        
                                         <input className="w-full p-2 border rounded mb-2" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
-                                        
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
                                             <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
+                                            <option>Kelas</option> 
                                         </select>
 
-                                        {/* DROPDOWN KELAS (BARU) */}
+                                        {/* MODIFIKASI: DROPDOWN KELAS */}
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kelas} onChange={e => setFormData({...formData, kelas: e.target.value})}>
                                             <option value="">-- Pilih Kelas --</option>
                                             {classList.map(c => <option key={c} value={c}>{c}</option>)}
@@ -805,11 +803,10 @@
                                         </div>
                                         <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy"/>
                                         <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
+                                        <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
                                         
-                                        <span className="text-[10px] text-gray-500 bg-gray-100 rounded px-2 py-0.5 inline-block mt-1">{p.kategori}</span>
-                                        
-                                        {/* TAMPILAN KELAS (MERAH, BESAR, TEBAL) */}
-                                        {p.kelas && <p className="text-xl font-black text-red-600 mt-1 uppercase tracking-tighter">{p.kelas}</p>}
+                                        {/* MODIFIKASI: TAMPILAN KELAS */}
+                                        {p.kelas && <p className="text-sm font-bold text-red-600 mt-1 uppercase tracking-tighter">{p.kelas}</p>}
                                     </div>
                                 ))}
                             </div>
@@ -857,8 +854,10 @@
                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 shadow-inner">
                                             <h4 className="text-xl font-bold text-slate-800">{scanResult.p.nama}</h4>
                                             <span className="inline-block bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded-full mt-1 mb-2">{scanResult.p.kategori}</span>
-                                            {/* TAMPILAN KELAS SAAT SCAN BERHASIL */}
-                                            {scanResult.p.kelas && <div className="text-2xl font-black text-red-600 uppercase mt-2">{scanResult.p.kelas}</div>}
+                                            
+                                            {/* MODIFIKASI: TAMPILAN KELAS SAAT SCAN BERHASIL */}
+                                            {scanResult.p.kelas && <div className="text-sm font-bold text-red-600 uppercase mt-2 tracking-tighter">{scanResult.p.kelas}</div>}
+                                            
                                             <p className="text-xs text-slate-400 border-t border-slate-200 pt-2 mt-2">{scanResult.time}</p>
                                         </div>
                                     )}
