@@ -58,7 +58,8 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        // Gunakan useLayoutEffect untuk fix masalah scroll
+        const { useState, useEffect, useLayoutEffect, useRef } = React;
 
         const CloudAttendance = () => {
             // --- STATE UTAMA ---
@@ -84,29 +85,47 @@
 
             const scannerRef = useRef(null);
 
-            // --- FUNGSI NAVIGASI PINTAR ---
-            const setView = (newView) => {
-                // 1. Paksa Scroll ke Atas setiap ganti halaman (Mencegah layar abu-abu jika halaman sebelumnya panjang)
+            // --- FUNGSI NAVIGASI PINTAR (ULTIMATE SCROLL FIX) ---
+            
+            // 1. Hook ini berjalan SECARA SINKRON sebelum layar digambar ulang
+            // Ini memastikan scroll dipaksa naik SEBELUM user melihat halaman kosong
+            useLayoutEffect(() => {
+                document.documentElement.scrollTop = 0;
+                document.body.scrollTop = 0;
                 window.scrollTo(0, 0);
-                // 2. Ganti Halaman
+            }, [view]);
+
+            const setView = (newView) => {
                 setViewRaw(newView);
             };
 
-            // PERBAIKAN UTAMA DI SINI:
-            // Fungsi ini disederhanakan agar PASTI kembali ke menu, tanpa syarat rumit.
             const handleBackToMenu = () => {
-                window.scrollTo(0, 0); // Pastikan scroll ke atas
-                setViewRaw('menu');    // Langsung paksa kembali ke Menu Awal
+                // Force Scroll Langsung saat tombol ditekan
+                window.scrollTo(0, 0);
+                
+                // Cek Login
+                if (currentUser) {
+                    setViewRaw('menu');
+                } else {
+                    const saved = localStorage.getItem('gkps_user');
+                    if (saved) {
+                        try {
+                            setCurrentUser(JSON.parse(saved));
+                            setViewRaw('menu');
+                        } catch(e) { setViewRaw('login'); }
+                    } else {
+                        setViewRaw('login');
+                    }
+                }
             };
 
             // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
-                // Cek LocalStorage saat aplikasi mulai
                 const savedUser = localStorage.getItem('gkps_user');
                 if (savedUser) {
                     try {
                         setCurrentUser(JSON.parse(savedUser));
-                        setViewRaw('menu'); // Gunakan setViewRaw agar tidak scroll otomatis saat init
+                        setViewRaw('menu'); 
                     } catch(e) {}
                 }
 
@@ -206,7 +225,7 @@
                 const userFound = users.find(u => u.username === username && u.password === password);
                 if (userFound) {
                     setCurrentUser(userFound);
-                    localStorage.setItem('gkps_user', JSON.stringify(userFound)); // Simpan sesi
+                    localStorage.setItem('gkps_user', JSON.stringify(userFound)); 
                     setView('menu');
                 } else {
                     alert("Username atau Password Salah!");
@@ -216,7 +235,7 @@
             const handleLogout = () => {
                 if(confirm("Keluar dari aplikasi?")) {
                     setCurrentUser(null);
-                    localStorage.removeItem('gkps_user'); // Hapus sesi
+                    localStorage.removeItem('gkps_user'); 
                     setView('login');
                 }
             };
@@ -365,7 +384,7 @@
             const isAdmin = safeUser.role === 'admin';
 
             if (view === 'menu') return (
-                <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
+                <div key="menu-view" className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
                     <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
                         <div className="bg-indigo-700 p-6 text-white relative">
                             <div className="flex justify-between items-start">
@@ -393,7 +412,6 @@
                                         <div className="text-left"><h3 className="font-bold text-gray-700">Database Peserta</h3><p className="text-xs text-gray-500">Import CSV / Generate QR</p></div>
                                     </button>
                                     
-                                    {/* TOMBOL RESET DATABASE */}
                                     <button onClick={handleResetAllData} className="w-full bg-red-50 border border-red-200 hover:bg-red-100 p-3 rounded-xl flex items-center justify-center gap-2 mt-2 transition">
                                         <i data-lucide="alert-octagon" className="text-red-500" width="16"></i>
                                         <span className="text-red-600 font-bold text-xs">RESET DATABASE (HAPUS SEMUA)</span>
