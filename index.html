@@ -58,6 +58,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
+        // Gunakan useLayoutEffect untuk fix masalah scroll
         const { useState, useEffect, useLayoutEffect, useRef } = React;
 
         const CloudAttendance = () => {
@@ -76,7 +77,8 @@
             // --- STATE UI ---
             const [scanResult, setScanResult] = useState(null);
             const [showAddForm, setShowAddForm] = useState(false);
-            const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu' });
+            // MODIFIKASI: Menambahkan field 'kelas' pada form data
+            const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
             const [isDownloading, setIsDownloading] = useState(false);
             
             // --- STATE MANAJEMEN & EDITING ---
@@ -99,7 +101,8 @@
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
-                setFormData({ nama: '', kategori: 'Anak Sekolah Minggu' });
+                // Reset form data termasuk kelas
+                setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
                 setSelfPassword('');
                 setViewRaw(newView);
             };
@@ -268,7 +271,7 @@
                 handleBackToMenu();
             };
 
-            // --- USER MANAGEMENT (ADD & EDIT / RESET PASS) ---
+            // --- USER MANAGEMENT ---
             const handleAddOrUpdateUser = () => {
                 if(!newUser.username || !newUser.password) return alert("Lengkapi data user!");
                 
@@ -329,19 +332,25 @@
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
-            // --- PARTICIPANT MANAGEMENT (KATEGORI: KELAS ADDED) ---
+            // --- PARTICIPANT MANAGEMENT (MODIFIKASI: KELAS ADDED) ---
             const handleAddOrUpdateParticipant = () => {
                 if(!formData.nama) return;
                 const id = editingId || `M-${Date.now()}`;
-                saveToCloud(`participants/${id}`, {id, nama: formData.nama, kategori: formData.kategori});
-                setFormData({nama:'', kategori:'Anak Sekolah Minggu'});
+                // Simpan kelas juga
+                saveToCloud(`participants/${id}`, {
+                    id, 
+                    nama: formData.nama, 
+                    kategori: formData.kategori,
+                    kelas: formData.kelas // Field baru
+                });
+                setFormData({nama:'', kategori:'Anak Sekolah Minggu', kelas: ''});
                 setEditingId(null);
                 if(editingId) setShowAddForm(false); 
                 alert("Tersimpan ke Cloud!");
             };
 
             const startEditParticipant = (p) => {
-                setFormData({ nama: p.nama, kategori: p.kategori });
+                setFormData({ nama: p.nama, kategori: p.kategori, kelas: p.kelas || '' });
                 setEditingId(p.id);
                 setShowAddForm(true); 
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -437,10 +446,17 @@
                     const lines = ev.target.result.split('\n').filter(l => l.trim());
                     let count = 0;
                     lines.slice(1).forEach((line, idx) => {
-                        const [nama, kategori] = line.split(',').map(s => s?.trim());
+                        // Modifikasi parsing CSV untuk mendukung kolom Kelas (opsional)
+                        // Format: Nama, Kategori, Kelas (opsional)
+                        const [nama, kategori, kelas] = line.split(',').map(s => s?.trim());
                         if (nama) {
                             const id = `GSM-${Date.now()}-${idx}`;
-                            saveToCloud(`participants/${id}`, { id, nama, kategori: kategori || 'Umum' });
+                            saveToCloud(`participants/${id}`, { 
+                                id, 
+                                nama, 
+                                kategori: kategori || 'Umum', 
+                                kelas: kelas || '-' // Default dash jika kosong
+                            });
                             count++;
                         }
                     });
@@ -753,7 +769,7 @@
                                     <input type="file" accept=".csv" onChange={handleCSV} className="absolute inset-0 opacity-0 cursor-pointer" />
                                     <i data-lucide="upload-cloud" className="mx-auto text-indigo-400 w-8 h-8 mb-2"></i>
                                     <span className="text-sm font-bold text-indigo-600 block">Upload CSV ke Cloud</span>
-                                    <span className="text-xs text-gray-400">Format: Nama,Kategori</span>
+                                    <span className="text-xs text-gray-400">Format: Nama,Kategori,Kelas</span>
                                 </div>
                                 <button onClick={() => setShowAddForm(!showAddForm)} className="w-full text-sm font-bold text-indigo-600 hover:bg-indigo-50 py-2 rounded transition">+ Input Manual</button>
                                 {showAddForm && (
@@ -762,13 +778,17 @@
                                         <input className="w-full p-2 border rounded mb-2" placeholder="Nama Lengkap" value={formData.nama} onChange={e => setFormData({...formData, nama: e.target.value})} />
                                         <select className="w-full p-2 border rounded mb-2" value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})}>
                                             <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
-                                            <option>Kelas</option> {/* PENAMBAHAN KATEGORI KELAS */}
+                                            <option>Kelas</option> {/* MODIFIKASI: KELAS ADDED */}
                                         </select>
+                                        
+                                        {/* MODIFIKASI: Input Kelas tambahan jika kategori kelas atau ingin manual */}
+                                        <input className="w-full p-2 border rounded mb-2" placeholder="Kelas (Opsional)" value={formData.kelas} onChange={e => setFormData({...formData, kelas: e.target.value})} />
+                                        
                                         <div className="flex gap-2">
                                             <button onClick={handleAddOrUpdateParticipant} className={`flex-1 text-white px-3 py-2 rounded font-bold ${editingId ? 'bg-orange-500' : 'bg-indigo-600'}`}>
                                                 {editingId ? 'Update' : 'Simpan'}
                                             </button>
-                                            {editingId && <button onClick={() => { setEditingId(null); setFormData({nama:'', kategori:'Anak Sekolah Minggu'}); setShowAddForm(false); }} className="bg-gray-400 text-white px-3 py-2 rounded">Batal</button>}
+                                            {editingId && <button onClick={() => { setEditingId(null); setFormData({nama:'', kategori:'Anak Sekolah Minggu', kelas: ''}); setShowAddForm(false); }} className="bg-gray-400 text-white px-3 py-2 rounded">Batal</button>}
                                         </div>
                                     </div>
                                 )}
@@ -790,6 +810,7 @@
                                         <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy"/>
                                         <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
                                         <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
+                                        <p className="text-[10px] font-bold text-indigo-600 mt-1">{p.kelas || '-'}</p> {/* TAMPILKAN KELAS */}
                                     </div>
                                 ))}
                             </div>
@@ -864,7 +885,8 @@
                                 {selectedSession && (
                                     <button onClick={() => {
                                         const sessionName = getSessionName(selectedSession);
-                                        const csv = ['No,ID,Nama,Kategori,Waktu,Petugas', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.timestamp}",${a.device||'-'}`)].join('\n');
+                                        // MODIFIKASI: Export Kelas di CSV
+                                        const csv = ['No,ID,Nama,Kategori,Kelas,Waktu,Petugas', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.kelas||'-'}", "${a.timestamp}",${a.device||'-'}`)].join('\n');
                                         const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = `Absensi_${sessionName}.csv`; link.click();
                                     }} className="w-full bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-lg font-bold flex justify-center gap-1 items-center transition shadow-sm"><i data-lucide="download" width="14"></i> EXPORT CSV SESI INI</button>
                                 )}
@@ -911,6 +933,3 @@
     </script>
 </body>
 </html>
-
-
-
