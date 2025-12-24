@@ -16,19 +16,22 @@
     <style>
         body { touch-action: manipulation; }
         
-        /* Area Scanner Fixed Height agar tidak collapse di Laptop */
+        /* Area Scanner yang lebih jelas */
         #reader { 
             width: 100%; 
-            height: 400px; /* Tinggi Fix untuk Laptop */
             background: #000; 
             border-radius: 12px; 
             overflow: hidden; 
-            position: relative; 
+            position: relative;
+            min-height: 350px;
         }
+        
+        /* Memastikan video mengisi area */
         #reader video { 
             object-fit: cover; 
             width: 100% !important; 
-            height: 100% !important; 
+            height: 100% !important;
+            border-radius: 12px; 
         }
         
         .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
@@ -36,21 +39,15 @@
 
         .scanner-line {
             position: absolute;
-            width: 100%;
-            height: 3px;
+            width: 80%;
+            height: 4px;
             background: #ef4444; 
-            box-shadow: 0 0 10px #ef4444;
-            top: 0;
-            left: 0;
+            box-shadow: 0 0 15px #ef4444;
+            top: 50%;
+            left: 10%;
             z-index: 50;
-            animation: scanning 2s infinite linear;
+            opacity: 0.8;
             pointer-events: none; 
-        }
-        
-        @keyframes scanning {
-            0% { top: 0%; opacity: 0.5; }
-            50% { opacity: 1; }
-            100% { top: 100%; opacity: 0.5; }
         }
 
         /* Notifikasi Animasi */
@@ -127,14 +124,10 @@
             const [messageInput, setMessageInput] = useState(''); 
             
             // --- STATE KHUSUS SCANNER ---
-            const [cameras, setCameras] = useState([]);
-            const [activeCameraId, setActiveCameraId] = useState(null);
             const [cameraError, setCameraError] = useState(null);
-            const [permissionGranted, setPermissionGranted] = useState(false);
+            const scannerRef = useRef(null);
 
             const logoutTimerRef = useRef(null);
-            const scannerRef = useRef(null);
-            const isScannerRunning = useRef(false);
 
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
 
@@ -179,12 +172,7 @@
                 setSelfPassword('');
                 setMessageInput('');
                 setViewRaw(newView);
-                
-                // Reset scanner state saat pindah view
-                if(newView !== 'scan') {
-                    setCameras([]);
-                    setCameraError(null);
-                }
+                if(newView !== 'scan') setCameraError(null);
             };
 
             const handleBackToMenu = () => {
@@ -457,115 +445,133 @@
                 try { const d = new Date(dateString); if(isNaN(d.getTime())) return ''; return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }); } catch(e) { return ''; }
             };
 
-            // --- ULTIMATE SCANNER LOGIC (Fixed for Laptop & Mobile) ---
+            // --- PERBAIKAN TOTAL SCANNER (SIMPLE & ROBUST) ---
             useEffect(() => {
                 if (view === 'scan' && !scanResult) {
-                    const t = setTimeout(() => { initCamera(); }, 500); // Delay agar DOM ready
-                    return () => { clearTimeout(t); stopScanner(); };
+                    // Delay render sedikit agar div #reader siap
+                    const t = setTimeout(() => {
+                        initSimpleScanner();
+                    }, 500);
+                    return () => {
+                        clearTimeout(t);
+                        stopScanner();
+                    };
                 } else {
                     stopScanner();
                 }
             }, [view, scanResult]);
 
-            const initCamera = () => {
-                // Minta izin dulu untuk memancing prompt browser
-                Html5Qrcode.getCameras().then(devices => {
-                    if (devices && devices.length) {
-                        setCameras(devices);
-                        setPermissionGranted(true);
-                        
-                        // Cari kamera belakang untuk HP, atau default pertama untuk laptop
-                        let targetId = devices[0].id;
-                        const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('belakang'));
-                        if(backCam) targetId = backCam.id;
-                        
-                        setActiveCameraId(targetId);
-                        startScannerWithId(targetId);
-                    } else {
-                        setCameraError("Tidak ada kamera terdeteksi.");
+            const initSimpleScanner = async () => {
+                try {
+                    // Stop jika ada sisa scanner yang nyangkut
+                    if (scannerRef.current) {
+                        await scannerRef.current.clear();
                     }
-                }).catch(err => {
-                    console.error(err);
-                    setCameraError("Akses kamera ditolak. Mohon izinkan akses kamera di browser Anda.");
-                });
-            };
 
-            const startScannerWithId = (cameraId) => {
-                if(!cameraId) return;
-                
-                // Pastikan stop dulu jika ada yang jalan
-                if(scannerRef.current) {
-                    scannerRef.current.stop().then(() => {
-                        scannerRef.current.clear();
-                        runConfig(cameraId);
-                    }).catch(err => {
-                        scannerRef.current.clear();
-                        runConfig(cameraId);
-                    });
-                } else {
-                    runConfig(cameraId);
+                    const html5QrCode = new Html5Qrcode("reader");
+                    scannerRef.current = html5QrCode;
+
+                    // Konfigurasi agar responsif
+                    // fps: 15 agar lebih smooth
+                    // qrbox: function agar responsif terhadap ukuran layar (HP vs Laptop)
+                    const config = { 
+                        fps: 15, 
+                        qrbox: (viewfinderWidth, viewfinderHeight) => {
+                            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+                            return {
+                                width: Math.floor(minEdge * 0.7), // 70% dari area kamera
+                                height: Math.floor(minEdge * 0.7)
+                            };
+                        }
+                    };
+
+                    // START LOGIC
+                    // Kita pakai facingMode: "user" dulu (biasanya webcam laptop), jika gagal, library akan coba environment
+                    // Ini kebalikan dari HP, tapi lebih aman buat laptop.
+                    // Jika di HP, user bisa switch kamera.
+                    
+                    await html5QrCode.start(
+                        { facingMode: "environment" }, // Coba kamera belakang/utama dulu
+                        config,
+                        (decodedText) => {
+                            handleScanSuccess(decodedText);
+                        },
+                        (errorMessage) => {
+                            // ignore
+                        }
+                    );
+                    setCameraError(null);
+
+                } catch (err) {
+                    console.error("Scanner Error:", err);
+                    setCameraError("Gagal akses kamera. Pastikan browser diizinkan & HTTPS aktif.");
+                    
+                    // Fallback: Coba paksa kamera 'user' (depan/webcam) jika environment gagal
+                    if(scannerRef.current) {
+                        try {
+                            await scannerRef.current.start(
+                                { facingMode: "user" },
+                                { fps: 10, qrbox: 250 },
+                                (text) => handleScanSuccess(text),
+                                () => {}
+                            );
+                            setCameraError(null);
+                        } catch(e) {
+                            setCameraError("Kamera benar-benar tidak bisa dibuka.");
+                        }
+                    }
                 }
-            };
-
-            const runConfig = (cameraId) => {
-                const html5QrCode = new Html5Qrcode("reader");
-                scannerRef.current = html5QrCode;
-                
-                // Konfigurasi sederhana agar kompatibel semua device
-                const config = { 
-                    fps: 10, 
-                    qrbox: { width: 250, height: 250 }
-                    // aspectRatio dihapus agar otomatis menyesuaikan container
-                };
-
-                html5QrCode.start(
-                    cameraId, 
-                    config,
-                    (decodedText) => {
-                        handleScanSuccess(decodedText);
-                    },
-                    (errorMessage) => {
-                        // ignore frame error
-                    }
-                ).catch(err => {
-                    console.error("Start Error", err);
-                    setCameraError("Gagal memulai kamera. Pastikan tidak sedang dipakai aplikasi lain.");
-                });
             };
 
             const stopScanner = () => {
                 if (scannerRef.current) {
                     try {
-                        scannerRef.current.stop().then(() => scannerRef.current.clear());
+                        scannerRef.current.stop().then(() => {
+                            scannerRef.current.clear();
+                        }).catch(err => {
+                            // Sering error 'not running' kalau unmount cepat, abaikan
+                        });
                     } catch (e) {}
                     scannerRef.current = null;
                 }
             };
 
-            const switchCamera = () => {
-                if(cameras.length < 2) return;
-                const currentIdx = cameras.findIndex(c => c.id === activeCameraId);
-                const nextIdx = (currentIdx + 1) % cameras.length;
-                const nextId = cameras[nextIdx].id;
-                setActiveCameraId(nextId);
-                startScannerWithId(nextId);
-            };
-
             const handleScanSuccess = (qrId) => {
-                if (!selectedSession) { setScanResult({ success: false, msg: 'ERROR: Pilih Sesi Terlebih Dahulu!' }); return; }
+                if (!selectedSession) { 
+                    alert("Mohon Pilih Sesi Terlebih Dahulu!"); 
+                    // Stop sebentar biar ga spam alert
+                    if(scannerRef.current) scannerRef.current.pause();
+                    setTimeout(() => { if(scannerRef.current) scannerRef.current.resume(); }, 2000);
+                    return; 
+                }
+                
                 const p = participants.find(item => item.id === qrId);
-                if (!p) { setScanResult({ success: false, msg: 'QR Tidak Terdaftar di Database!' }); return; }
+                if (!p) { 
+                    alert("QR Code Tidak Dikenal!"); 
+                    if(scannerRef.current) scannerRef.current.pause();
+                    setTimeout(() => { if(scannerRef.current) scannerRef.current.resume(); }, 2000);
+                    return; 
+                }
+
+                // Sukses Valid
                 const exist = attendance.find(item => item.id === qrId);
                 if (exist) { setScanResult({ success: false, msg: 'Sudah Check-in di Sesi Ini', p, time: exist.timestamp }); return; }
+                
                 const now = new Date();
                 const newAtt = { ...p, timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), device: currentUser?.username || 'Unknown', sessionId: selectedSession };
+                
                 saveToCloud(`attendance/${selectedSession}/${p.id}`, newAtt);
                 setScanResult({ success: true, msg: 'Check-in Berhasil!', p, time: newAtt.timestamp });
-                // Stop scanner sementara saat sukses
+                
+                // Stop scanner saat modal sukses muncul
                 stopScanner();
             };
             
-            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
+            // --- PERBAIKAN GENERATOR QR CODE (AGAR LEBIH MUDAH DIBACA LAPTOP) ---
+            // Menggunakan API 'api.qrserver.com' tapi dengan ECC=L (Low) & Margin
+            // ECC Low membuat pola QR lebih sederhana (blok lebih besar)
+            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}&ecc=L&margin=2`;
+            
             const getSessionName = (id) => sessions.find(s => s.id === id)?.name || 'Unknown Session';
             const downloadAllQR = async () => {
                 if (participants.length === 0) return;
@@ -706,19 +712,6 @@
                             <option value="" disabled>-- Pilih Sesi Kegiatan --</option>
                             {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
-                        {/* Tombol Kamera Manual */}
-                        <div className="flex gap-2">
-                            {cameras.length > 0 && !isScannerRunning.current && (
-                                <button onClick={() => startScannerWithId(activeCameraId)} className="bg-green-600 text-white px-3 py-1 rounded text-xs flex items-center gap-1">
-                                    <i data-lucide="play" width="12"></i> Start Kamera
-                                </button>
-                            )}
-                            {cameras.length > 1 && (
-                                <button onClick={switchCamera} className="bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 px-4 rounded-full flex items-center gap-2 transition">
-                                    <i data-lucide="refresh-cw" width="14"></i> Flip Kamera
-                                </button>
-                            )}
-                        </div>
                     </div>
                     <div className="flex-1 bg-black relative flex flex-col justify-center items-center">
                         <div className="w-full max-w-sm px-4">
@@ -727,7 +720,7 @@
                                     <div className="text-center text-gray-400 p-8"><i data-lucide="alert-triangle" className="mx-auto mb-2 text-yellow-500"></i><p>Mohon Pilih Sesi Kegiatan di atas untuk mulai scan.</p></div>
                                 ) : (
                                     <>
-                                        {cameraError && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-red-500 z-50 bg-black/90 font-bold">{cameraError}<br/><button onClick={initCamera} className="mt-2 bg-white text-red-500 px-3 py-1 rounded text-xs">Coba Lagi</button></div>}
+                                        {cameraError && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-red-500 z-50 bg-black/90 font-bold text-sm">{cameraError}</div>}
                                         <div id="reader"></div>
                                         <div className="scanner-line"></div>
                                     </>
