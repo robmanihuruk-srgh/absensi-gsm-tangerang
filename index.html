@@ -570,9 +570,8 @@
                 stopScanner();
             };
             
-            // --- QR CODE GENERATOR (OPTIMASI WEBCAM LAPTOP) ---
-            // ECC=L (Low): Blok besar, mudah dibaca kamera buram
-            // Size 450x450: Lebih tajam saat didownload
+            // --- QR CODE GENERATOR (MODIFIKASI UTAMA DI SINI) ---
+            // Menggunakan API qrserver dengan ECC=L dan ukuran besar agar mudah dibaca webcam laptop
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=450x450&data=${id}&ecc=L&margin=4&format=png`;
             
             const getSessionName = (id) => sessions.find(s => s.id === id)?.name || 'Unknown Session';
