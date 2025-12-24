@@ -15,8 +15,10 @@
 
     <style>
         body { touch-action: manipulation; }
-        #reader { border: none !important; }
-        #reader__scan_region img { display: none; }
+        /* Fix tampilan scanner agar tidak berantakan di laptop */
+        #reader { border: none !important; width: 100%; }
+        #reader__scan_region { width: 100%; min-height: 300px; }
+        #reader video { object-fit: cover; border-radius: 12px; }
         #reader__dashboard_section_csr button { 
             background-color: #4F46E5; color: white; border-radius: 8px; padding: 10px 20px; 
             border: none; font-weight: bold; margin-top: 10px; cursor: pointer; width: 100%;
@@ -80,10 +82,11 @@
             const [showAddForm, setShowAddForm] = useState(false);
             const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
             const [isDownloading, setIsDownloading] = useState(false);
+            const [downloadStatus, setDownloadStatus] = useState(''); // Untuk status loading text
             
             // --- STATE MANAJEMEN & EDITING ---
             const [editingId, setEditingId] = useState(null);
-            const [editingMessageId, setEditingMessageId] = useState(null); // ID pesan yang sedang diedit
+            const [editingMessageId, setEditingMessageId] = useState(null); 
             
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
@@ -97,28 +100,22 @@
             const resetLogoutTimer = () => {
                 if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 if (currentUser) {
-                    // Set timer 1 menit (60000 ms)
                     logoutTimerRef.current = setTimeout(() => {
-                        handleLogout(true); // true = force logout without confirm
-                    }, 60000);
+                        handleLogout(true); 
+                    }, 60000); // 1 Menit
                 }
             };
 
-            // Pasang event listener untuk mendeteksi aktivitas
             useEffect(() => {
                 const events = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart'];
                 const handleActivity = () => resetLogoutTimer();
-
                 events.forEach(event => window.addEventListener(event, handleActivity));
-                
-                // Mulai timer awal
                 resetLogoutTimer();
-
                 return () => {
                     events.forEach(event => window.removeEventListener(event, handleActivity));
                     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 };
-            }, [currentUser]); // Reset listener saat user login/logout
+            }, [currentUser]);
 
             // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
@@ -320,13 +317,11 @@
                 handleBackToMenu();
             };
 
-            // --- MESSAGES MANAGEMENT (MODIFIED) ---
+            // --- MESSAGES MANAGEMENT ---
             const handleSendMessage = () => {
                 if(!messageInput) return alert("Tuliskan pesan Anda!");
                 
-                // Jika sedang mode edit
                 if (editingMessageId) {
-                    // Cari pesan lama untuk ambil data sender & timestamp asli jika perlu, atau update timestamp
                     const msg = messages.find(m => m.id === editingMessageId);
                     if(msg) {
                         saveToCloud(`messages/${editingMessageId}`, { ...msg, text: messageInput });
@@ -334,13 +329,12 @@
                     }
                     setEditingMessageId(null);
                 } else {
-                    // Mode Tambah Baru
                     const id = `MSG-${Date.now()}`;
                     const msgData = {
                         id,
                         text: messageInput,
                         sender: currentUser.nama || currentUser.username,
-                        senderUsername: currentUser.username, // Simpan username asli untuk validasi hak akses
+                        senderUsername: currentUser.username, 
                         role: currentUser.role,
                         timestamp: new Date().toLocaleString('id-ID')
                     };
@@ -353,7 +347,7 @@
             const startEditMessage = (m) => {
                 setMessageInput(m.text);
                 setEditingMessageId(m.id);
-                window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll ke input box
+                window.scrollTo({ top: 0, behavior: 'smooth' });
             };
 
             const cancelEditMessage = () => {
@@ -367,7 +361,7 @@
                 saveToCloud(`users/${newUser.username}`, newUser);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setEditingId(null); 
-                alert(editingId ? "User berhasil diupdate (termasuk password)!" : "User berhasil ditambahkan!");
+                alert(editingId ? "User berhasil diupdate!" : "User berhasil ditambahkan!");
             };
 
             const startEditUser = (u) => {
@@ -446,7 +440,7 @@
                 return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
             };
 
-            // --- SCANNER LOGIC ---
+            // --- SCANNER LOGIC (FIXED FOR LAPTOP) ---
             useEffect(() => {
                 if (view === 'scan' && !scanResult) {
                     setTimeout(startScanner, 300);
@@ -456,7 +450,15 @@
 
             const startScanner = () => {
                 if (scannerRef.current) scannerRef.current.clear().catch(()=>{});
-                const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250, aspectRatio: 1.0 }, false);
+                // PERBAIKAN: Hapus aspectRatio agar laptop bisa menyesuaikan sendiri
+                // Tambahkan config box agar tidak terlalu besar
+                const config = { 
+                    fps: 10, 
+                    qrbox: { width: 250, height: 250 } 
+                };
+                
+                const scanner = new Html5QrcodeScanner("reader", config, false);
+                
                 scanner.render((decodedText) => {
                     handleScanSuccess(decodedText);
                     scanner.clear(); 
@@ -497,16 +499,44 @@
                 setScanResult({ success: true, msg: 'Check-in Berhasil!', p, time: newAtt.timestamp });
             };
 
-            // --- UTILITIES ---
+            // --- UTILITIES & DOWNLOAD FIX ---
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
             const getSessionName = (id) => sessions.find(s => s.id === id)?.name || 'Unknown Session';
 
+            // Fitur Baru: Download Satu per Satu
+            const downloadSingleQR = async (p) => {
+                try {
+                    const btnId = `btn-dl-${p.id}`;
+                    const btn = document.getElementById(btnId);
+                    if(btn) btn.innerText = "..."; // Indikator loading kecil
+
+                    const res = await fetch(generateQRUrl(p.id));
+                    const blob = await res.blob();
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    if(btn) btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-download"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>';
+                } catch (e) {
+                    alert("Gagal download: " + e.message);
+                }
+            };
+
+            // Perbaikan: Download All tanpa membuat layar hitam/hang
             const downloadAllQR = async () => {
                 if (participants.length === 0) return;
+                if (!confirm(`Mendownload ${participants.length} QR Code. Proses ini mungkin memakan waktu. Lanjutkan?`)) return;
+
                 setIsDownloading(true);
-                alert("Mendownload QR Code... (Mohon Jangan Tutup Browser)");
+                setDownloadStatus('Menyiapkan...');
+                
+                let count = 0;
                 for (const p of participants) {
                     try {
+                        setDownloadStatus(`Download ${count + 1}/${participants.length}`);
                         const res = await fetch(generateQRUrl(p.id));
                         const blob = await res.blob();
                         const link = document.createElement('a');
@@ -515,11 +545,16 @@
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                        await new Promise(r => setTimeout(r, 500)); 
+                        
+                        // Delay sedikit agar browser tidak hang/blank
+                        await new Promise(r => setTimeout(r, 600)); 
+                        count++;
                     } catch (e) { console.error(e); }
                 }
+                
                 setIsDownloading(false);
-                alert("Selesai Download!");
+                setDownloadStatus('');
+                alert("Selesai Download Semua QR!");
             };
 
             const handleCSV = (e) => {
@@ -651,7 +686,6 @@
                 </div>
             );
 
-            // --- VIEW: CHANGE SELF PASSWORD ---
             if (view === 'change_password') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -667,7 +701,6 @@
                 </div>
             );
 
-            // --- VIEW MODIFIKASI: PESAN & KESAN (DENGAN EDIT/HAPUS) ---
             if (view === 'messages') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -698,10 +731,6 @@
                                         <span>{m.timestamp}</span>
                                     </div>
                                     
-                                    {/* LOGIKA EDIT/HAPUS: 
-                                        - Admin/Panitia bisa Hapus semua pesan
-                                        - User bisa Edit & Hapus pesan miliknya sendiri (berdasarkan username)
-                                    */}
                                     <div className="flex gap-2 mt-2 justify-end">
                                         {m.senderUsername === currentUser.username && (
                                             <button onClick={() => startEditMessage(m)} className="text-blue-500 p-1 rounded hover:bg-blue-50"><i data-lucide="pencil" width="14"></i></button>
@@ -940,7 +969,7 @@
 
                             {participants.length > 0 && (
                                 <button onClick={downloadAllQR} disabled={isDownloading} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold mb-6 flex justify-center gap-2 transition">
-                                    {isDownloading ? 'Sedang Download...' : <><i data-lucide="download"></i> Download Semua QR</>}
+                                    {isDownloading ? downloadStatus : <><i data-lucide="download"></i> Download Semua QR</>}
                                 </button>
                             )}
 
@@ -951,6 +980,14 @@
                                             <button onClick={() => startEditParticipant(p)} className="text-blue-500 bg-blue-50 p-1 rounded hover:bg-blue-100"><i data-lucide="pencil" width="12"></i></button>
                                             <button onClick={() => deleteFromCloud(`participants/${p.id}`)} className="text-red-500 bg-red-50 p-1 rounded hover:bg-red-100"><i data-lucide="trash-2" width="12"></i></button>
                                         </div>
+                                        
+                                        {/* PERBAIKAN: Tombol Download Single */}
+                                        <div className="absolute top-2 left-2">
+                                            <button id={`btn-dl-${p.id}`} onClick={() => downloadSingleQR(p)} className="text-emerald-600 bg-emerald-50 p-1 rounded hover:bg-emerald-100" title="Download QR Ini">
+                                                <i data-lucide="download" width="12"></i>
+                                            </button>
+                                        </div>
+
                                         <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy"/>
                                         <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
                                         <p className="text-[10px] text-gray-500 bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
@@ -1030,7 +1067,6 @@
                                 {selectedSession && (
                                     <button onClick={() => {
                                         const sessionName = getSessionName(selectedSession);
-                                        // MODIFIKASI: Username Petugas di Export CSV
                                         const csv = ['No,ID,Nama,Kategori,Kelas,Waktu,Petugas', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.kelas||'-'}", "${a.timestamp}",${a.device||'-'}`)].join('\n');
                                         const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = `Absensi_${sessionName}.csv`; link.click();
                                     }} className="w-full bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-lg font-bold flex justify-center gap-1 items-center transition shadow-sm"><i data-lucide="download" width="14"></i> EXPORT CSV SESI INI</button>
@@ -1082,4 +1118,3 @@
     </script>
 </body>
 </html>
-
