@@ -11,16 +11,24 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript"></script>
 
     <style>
         body { touch-action: manipulation; }
-        #reader { border: none !important; }
-        #reader__scan_region img { display: none; }
         
-        #reader__dashboard_section_csr button { 
-            background-color: #4F46E5; color: white; border-radius: 8px; padding: 5px 10px; 
-            border: none; font-weight: bold; margin-top: 10px; cursor: pointer; width: 100%; font-size: 12px;
+        /* Area Scanner Fixed Height agar tidak collapse di Laptop */
+        #reader { 
+            width: 100%; 
+            height: 400px; /* Tinggi Fix untuk Laptop */
+            background: #000; 
+            border-radius: 12px; 
+            overflow: hidden; 
+            position: relative; 
+        }
+        #reader video { 
+            object-fit: cover; 
+            width: 100% !important; 
+            height: 100% !important; 
         }
         
         .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
@@ -106,7 +114,7 @@
             const [showAddForm, setShowAddForm] = useState(false);
             const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
             const [isDownloading, setIsDownloading] = useState(false);
-            const [notification, setNotification] = useState(null); // { msg, type: 'info'|'success'|'warning'|'error' }
+            const [notification, setNotification] = useState(null);
             
             // --- STATE MANAJEMEN ---
             const [editingId, setEditingId] = useState(null);
@@ -117,16 +125,22 @@
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
+            
+            // --- STATE KHUSUS SCANNER ---
+            const [cameras, setCameras] = useState([]);
+            const [activeCameraId, setActiveCameraId] = useState(null);
+            const [cameraError, setCameraError] = useState(null);
+            const [permissionGranted, setPermissionGranted] = useState(false);
 
             const logoutTimerRef = useRef(null);
             const scannerRef = useRef(null);
+            const isScannerRunning = useRef(false);
 
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
 
             // --- NOTIFICATION HELPER ---
             const showNotification = (msg, type = 'info') => {
                 setNotification({ msg, type });
-                // Auto hide setelah 4 detik
                 setTimeout(() => setNotification(null), 4000);
             };
 
@@ -165,6 +179,12 @@
                 setSelfPassword('');
                 setMessageInput('');
                 setViewRaw(newView);
+                
+                // Reset scanner state saat pindah view
+                if(newView !== 'scan') {
+                    setCameras([]);
+                    setCameraError(null);
+                }
             };
 
             const handleBackToMenu = () => {
@@ -186,22 +206,19 @@
 
             // --- PERIODIC CHECK: UPCOMING SESSIONS ---
             useEffect(() => {
-                if (!currentUser) return; // Hanya jalankan jika login
+                if (!currentUser) return; 
                 const checkUpcoming = setInterval(() => {
                     const now = new Date();
                     sessions.forEach(s => {
                         if (s.date && s.timeStart) {
                             const start = new Date(`${s.date}T${s.timeStart}`);
-                            const diff = (start - now) / 60000; // selisih menit
-                            // Jika sesi akan mulai dalam 0-15 menit
+                            const diff = (start - now) / 60000; 
                             if (diff > 0 && diff <= 15) {
-                                // Cek sederhana agar tidak spam notif yang sama terus menerus (bisa ditingkatkan)
-                                // Di sini kita biarkan muncul tiap menit sebagai pengingat agresif
                                 showNotification(`Sesi "${s.title}" akan dimulai dalam ${Math.ceil(diff)} menit!`, 'info');
                             }
                         }
                     });
-                }, 60000); // Cek tiap 1 menit
+                }, 60000); 
                 return () => clearInterval(checkUpcoming);
             }, [sessions, currentUser]);
 
@@ -338,32 +355,25 @@
                 }
             };
 
-            // --- HANDLE SESSION CHANGE & NOTIFICATION ---
             const handleSessionChange = (e) => {
                 const sessId = e.target.value;
                 setSelectedSession(sessId);
-                
                 const sess = sessions.find(s => s.id === sessId);
                 if(sess) {
-                    // Logic untuk cek status waktu
                     let msg = `Sesi "${sess.title}" dipilih.`;
                     let type = 'success';
-
                     if (sess.date && sess.timeEnd) {
-                        // Support data lama yang mungkin belum punya timeEnd terpisah
-                        // Kalau format lama (String range), kita coba parse
                         let endTimeStr = sess.timeEnd;
                         if (!endTimeStr && sess.time) {
                              const parts = sess.time.split(' - ');
                              if(parts.length >= 2) endTimeStr = parts[1].replace(' WIB','').trim();
                         }
-
                         if(endTimeStr) {
                             const end = new Date(`${sess.date}T${endTimeStr}`);
                             const now = new Date();
                             if (now > end) {
                                 msg = `PERHATIAN: Sesi "${sess.title}" telah berakhir pada ${endTimeStr}.`;
-                                type = 'warning'; // Atau error(merah)
+                                type = 'warning'; 
                             } else {
                                 msg = `Sesi "${sess.title}" sedang aktif.`;
                             }
@@ -372,8 +382,6 @@
                     showNotification(msg, type);
                 }
             };
-
-            // ... (Rest of logic: user, session, rundown, participant management remains same) ...
             
             const handleAddOrUpdateSession = () => {
                 const { title, date, timeStart, timeEnd } = sessionForm;
@@ -449,16 +457,100 @@
                 try { const d = new Date(dateString); if(isNaN(d.getTime())) return ''; return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }); } catch(e) { return ''; }
             };
 
-            // --- SCANNER LOGIC ---
-            useEffect(() => { if (view === 'scan' && !scanResult) { setTimeout(startScanner, 300); return () => stopScanner(); } }, [view, scanResult]);
-            const startScanner = () => {
-                if (scannerRef.current) { try { scannerRef.current.clear().catch(()=>{}); } catch(e){} }
-                if(!document.getElementById("reader")) return;
-                const scanner = new Html5QrcodeScanner("reader", { fps: 30, qrbox: 250, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, false);
-                scanner.render((decodedText) => { handleScanSuccess(decodedText); scanner.clear(); }, (error) => {});
-                scannerRef.current = scanner;
+            // --- ULTIMATE SCANNER LOGIC (Fixed for Laptop & Mobile) ---
+            useEffect(() => {
+                if (view === 'scan' && !scanResult) {
+                    const t = setTimeout(() => { initCamera(); }, 500); // Delay agar DOM ready
+                    return () => { clearTimeout(t); stopScanner(); };
+                } else {
+                    stopScanner();
+                }
+            }, [view, scanResult]);
+
+            const initCamera = () => {
+                // Minta izin dulu untuk memancing prompt browser
+                Html5Qrcode.getCameras().then(devices => {
+                    if (devices && devices.length) {
+                        setCameras(devices);
+                        setPermissionGranted(true);
+                        
+                        // Cari kamera belakang untuk HP, atau default pertama untuk laptop
+                        let targetId = devices[0].id;
+                        const backCam = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('belakang'));
+                        if(backCam) targetId = backCam.id;
+                        
+                        setActiveCameraId(targetId);
+                        startScannerWithId(targetId);
+                    } else {
+                        setCameraError("Tidak ada kamera terdeteksi.");
+                    }
+                }).catch(err => {
+                    console.error(err);
+                    setCameraError("Akses kamera ditolak. Mohon izinkan akses kamera di browser Anda.");
+                });
             };
-            const stopScanner = () => { if (scannerRef.current) { try { scannerRef.current.clear(); } catch(e){} scannerRef.current = null; } };
+
+            const startScannerWithId = (cameraId) => {
+                if(!cameraId) return;
+                
+                // Pastikan stop dulu jika ada yang jalan
+                if(scannerRef.current) {
+                    scannerRef.current.stop().then(() => {
+                        scannerRef.current.clear();
+                        runConfig(cameraId);
+                    }).catch(err => {
+                        scannerRef.current.clear();
+                        runConfig(cameraId);
+                    });
+                } else {
+                    runConfig(cameraId);
+                }
+            };
+
+            const runConfig = (cameraId) => {
+                const html5QrCode = new Html5Qrcode("reader");
+                scannerRef.current = html5QrCode;
+                
+                // Konfigurasi sederhana agar kompatibel semua device
+                const config = { 
+                    fps: 10, 
+                    qrbox: { width: 250, height: 250 }
+                    // aspectRatio dihapus agar otomatis menyesuaikan container
+                };
+
+                html5QrCode.start(
+                    cameraId, 
+                    config,
+                    (decodedText) => {
+                        handleScanSuccess(decodedText);
+                    },
+                    (errorMessage) => {
+                        // ignore frame error
+                    }
+                ).catch(err => {
+                    console.error("Start Error", err);
+                    setCameraError("Gagal memulai kamera. Pastikan tidak sedang dipakai aplikasi lain.");
+                });
+            };
+
+            const stopScanner = () => {
+                if (scannerRef.current) {
+                    try {
+                        scannerRef.current.stop().then(() => scannerRef.current.clear());
+                    } catch (e) {}
+                    scannerRef.current = null;
+                }
+            };
+
+            const switchCamera = () => {
+                if(cameras.length < 2) return;
+                const currentIdx = cameras.findIndex(c => c.id === activeCameraId);
+                const nextIdx = (currentIdx + 1) % cameras.length;
+                const nextId = cameras[nextIdx].id;
+                setActiveCameraId(nextId);
+                startScannerWithId(nextId);
+            };
+
             const handleScanSuccess = (qrId) => {
                 if (!selectedSession) { setScanResult({ success: false, msg: 'ERROR: Pilih Sesi Terlebih Dahulu!' }); return; }
                 const p = participants.find(item => item.id === qrId);
@@ -469,6 +561,8 @@
                 const newAtt = { ...p, timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), device: currentUser?.username || 'Unknown', sessionId: selectedSession };
                 saveToCloud(`attendance/${selectedSession}/${p.id}`, newAtt);
                 setScanResult({ success: true, msg: 'Check-in Berhasil!', p, time: newAtt.timestamp });
+                // Stop scanner sementara saat sukses
+                stopScanner();
             };
             
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
@@ -607,11 +701,24 @@
                         <span className="font-bold tracking-widest text-indigo-400">SCANNER</span>
                         <div className="w-16"></div>
                     </div>
-                    <div className="bg-gray-800 p-2 flex justify-center">
-                        <select className="bg-gray-700 text-white text-sm p-2 rounded border border-gray-600 max-w-xs" value={selectedSession || ''} onChange={handleSessionChange}>
+                    <div className="bg-gray-800 p-2 flex justify-center flex-col items-center gap-2">
+                        <select className="bg-gray-700 text-white text-sm p-2 rounded border border-gray-600 max-w-xs w-full" value={selectedSession || ''} onChange={handleSessionChange}>
                             <option value="" disabled>-- Pilih Sesi Kegiatan --</option>
                             {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
+                        {/* Tombol Kamera Manual */}
+                        <div className="flex gap-2">
+                            {cameras.length > 0 && !isScannerRunning.current && (
+                                <button onClick={() => startScannerWithId(activeCameraId)} className="bg-green-600 text-white px-3 py-1 rounded text-xs flex items-center gap-1">
+                                    <i data-lucide="play" width="12"></i> Start Kamera
+                                </button>
+                            )}
+                            {cameras.length > 1 && (
+                                <button onClick={switchCamera} className="bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 px-4 rounded-full flex items-center gap-2 transition">
+                                    <i data-lucide="refresh-cw" width="14"></i> Flip Kamera
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div className="flex-1 bg-black relative flex flex-col justify-center items-center">
                         <div className="w-full max-w-sm px-4">
@@ -619,7 +726,11 @@
                                 {!selectedSession ? (
                                     <div className="text-center text-gray-400 p-8"><i data-lucide="alert-triangle" className="mx-auto mb-2 text-yellow-500"></i><p>Mohon Pilih Sesi Kegiatan di atas untuk mulai scan.</p></div>
                                 ) : (
-                                    <><div id="reader"></div><div className="scanner-line"></div></>
+                                    <>
+                                        {cameraError && <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-red-500 z-50 bg-black/90 font-bold">{cameraError}<br/><button onClick={initCamera} className="mt-2 bg-white text-red-500 px-3 py-1 rounded text-xs">Coba Lagi</button></div>}
+                                        <div id="reader"></div>
+                                        <div className="scanner-line"></div>
+                                    </>
                                 )}
                             </div>
                         </div>
