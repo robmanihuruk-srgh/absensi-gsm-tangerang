@@ -16,7 +16,7 @@
     <style>
         body { touch-action: manipulation; }
         
-        /* PERBAIKAN CSS: Area Scanner Fixed Height agar tidak 0px di Laptop */
+        /* Area Scanner Fixed Height agar tidak 0px di Laptop */
         #reader { 
             width: 100%; 
             height: 400px; /* Tinggi Fix untuk Laptop */
@@ -25,7 +25,7 @@
             overflow: hidden; 
             position: relative; 
         }
-        /* Memaksa video kamera mengisi penuh area */
+        /* Memaksa video kamera mengisi penuh area tanpa gepeng */
         #reader video { 
             object-fit: cover; 
             width: 100% !important; 
@@ -136,12 +136,11 @@
                 setTimeout(() => setNotification(null), 4000);
             };
 
-            // --- AUTO LOGOUT (PERBAIKAN 2: Security Bypass saat Scan) ---
+            // --- AUTO LOGOUT (BYPASS SAAT SCAN) ---
             const resetLogoutTimer = () => {
                 if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 
                 // JANGAN LOGOUT JIKA SEDANG DI HALAMAN SCAN
-                // Ini mencegah kamera mati sendiri
                 if (view === 'scan') return; 
 
                 if (currentUser) {
@@ -160,7 +159,7 @@
                     events.forEach(event => window.removeEventListener(event, handleActivity));
                     if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 };
-            }, [currentUser, view]); // Tambahkan 'view' ke dependency agar dicek ulang saat ganti halaman
+            }, [currentUser, view]); // Cek ulang saat view berubah
 
             useLayoutEffect(() => {
                 window.scrollTo({ top: 0, behavior: 'instant' });
@@ -176,7 +175,6 @@
                 setSelfPassword('');
                 setMessageInput('');
                 
-                // Reset error kamera jika keluar dari halaman scan
                 if(newView !== 'scan') setCameraError(null);
                 
                 setViewRaw(newView);
@@ -452,10 +450,9 @@
                 try { const d = new Date(dateString); if(isNaN(d.getTime())) return ''; return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }); } catch(e) { return ''; }
             };
 
-            // --- PERBAIKAN TOTAL SCANNER (SIMPLE & ROBUST) ---
+            // --- SCANNER TUNING ---
             useEffect(() => {
                 if (view === 'scan' && !scanResult) {
-                    // Delay render sedikit agar div #reader siap
                     const t = setTimeout(() => {
                         initSimpleScanner();
                     }, 500);
@@ -470,40 +467,32 @@
 
             const initSimpleScanner = async () => {
                 try {
-                    // Stop jika ada sisa scanner yang nyangkut
-                    if (scannerRef.current) {
-                        await scannerRef.current.clear();
-                    }
+                    if (scannerRef.current) { await scannerRef.current.clear(); }
 
-                    // Gunakan Class Core, bukan Scanner UI Widget
                     const html5QrCode = new Html5Qrcode("reader");
                     scannerRef.current = html5QrCode;
 
-                    // Konfigurasi agar responsif
+                    // CONFIG: Lebih Sensitif
                     const config = { 
-                        fps: 15, // FPS lebih tinggi agar smooth
-                        qrbox: (viewfinderWidth, viewfinderHeight) => {
-                            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-                            return {
-                                width: Math.floor(minEdge * 0.7), // 70% dari area
-                                height: Math.floor(minEdge * 0.7)
-                            };
+                        fps: 20, // Naikkan FPS (Standar 10) agar lebih cepat menangkap gambar
+                        qrbox: { width: 250, height: 250 },
+                        // Minta resolusi tinggi jika tersedia (Penting untuk Laptop)
+                        videoConstraints: {
+                            facingMode: "environment", // Default belakang (HP)
+                            width: { min: 640, ideal: 1280, max: 1920 }, // Minta HD
+                            height: { min: 480, ideal: 720, max: 1080 },
                         }
                     };
 
-                    // START LOGIC: Coba Environment dulu (HP), Fallback ke User (Laptop)
+                    // START: Coba Environment (HP) dulu, Fallback ke User (Laptop)
                     await html5QrCode.start(
                         { facingMode: "environment" }, 
                         config,
-                        (decodedText) => {
-                            handleScanSuccess(decodedText);
-                        },
-                        (errorMessage) => {
-                            // ignore error scanning frame
-                        }
+                        (decodedText) => { handleScanSuccess(decodedText); },
+                        (errorMessage) => {}
                     ).catch(async (err) => {
                         console.log("Environment camera failed, trying user camera...", err);
-                        // Fallback: Coba kamera depan/webcam laptop
+                        // Fallback ke kamera depan/webcam
                         if(scannerRef.current) {
                             await scannerRef.current.start(
                                 { facingMode: "user" },
@@ -525,9 +514,7 @@
             const stopScanner = () => {
                 if (scannerRef.current) {
                     try {
-                        scannerRef.current.stop().then(() => {
-                            scannerRef.current.clear();
-                        }).catch(err => {});
+                        scannerRef.current.stop().then(() => { scannerRef.current.clear(); }).catch(err => {});
                     } catch (e) {}
                     scannerRef.current = null;
                 }
@@ -536,7 +523,6 @@
             const handleScanSuccess = (qrId) => {
                 if (!selectedSession) { 
                     alert("Mohon Pilih Sesi Terlebih Dahulu!"); 
-                    // Pause sebentar
                     if(scannerRef.current) scannerRef.current.pause();
                     setTimeout(() => { if(scannerRef.current) scannerRef.current.resume(); }, 2000);
                     return; 
@@ -550,11 +536,9 @@
                     return; 
                 }
 
-                // Cek Duplicate
                 const exist = attendance.find(item => item.id === qrId);
                 if (exist) { setScanResult({ success: false, msg: 'Sudah Check-in di Sesi Ini', p, time: exist.timestamp }); stopScanner(); return; }
                 
-                // Simpan
                 const now = new Date();
                 const newAtt = { ...p, timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), device: currentUser?.username || 'Unknown', sessionId: selectedSession };
                 saveToCloud(`attendance/${selectedSession}/${p.id}`, newAtt);
@@ -563,9 +547,10 @@
                 stopScanner();
             };
             
-            // --- PERBAIKAN QR CODE (Agar mudah dibaca Laptop) ---
-            // ECC=L (Low) membuat QR lebih simpel (kotak lebih besar)
-            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}&ecc=L&margin=2`;
+            // --- GENERATOR QR CODE DIPERBAIKI (LEBIH MUDAH DIBACA) ---
+            // ECC=L (Low Correction) -> Kotak-kotak lebih besar & sederhana
+            // Margin=4 -> Memberi ruang putih di pinggir agar kontras jelas
+            const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${id}&ecc=L&margin=4`;
             
             const getSessionName = (id) => sessions.find(s => s.id === id)?.name || 'Unknown Session';
             const downloadAllQR = async () => {
@@ -595,7 +580,6 @@
             };
 
             // --- COMPONENTS ---
-            // Notification Banner
             const NotificationBanner = () => {
                 if (!notification) return null;
                 const colors = {
@@ -635,7 +619,6 @@
                 </div>
             );
 
-            // Container Utama dengan Notifikasi
             const MainContainer = ({ children }) => (
                 <div className="min-h-screen bg-slate-100 p-4 pt-16">
                     <NotificationBanner />
@@ -688,7 +671,6 @@
 
             if (view === 'manage_users') return <MainContainer><div className="max-w-md mx-auto"><button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button><div className="bg-white rounded-xl shadow p-6 mb-4"><h2 className="font-bold text-lg mb-4 flex gap-2 items-center">{editingId ? <><i data-lucide="edit"></i> Edit User / Reset Pass</> : <><i data-lucide="user-plus"></i> Tambah User</>}</h2><div className="space-y-2"><input placeholder="Username" disabled={!!editingId} className={`w-full border p-2 rounded ${editingId ? 'bg-gray-100 text-gray-500' : ''}`} value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /><input placeholder={editingId ? "Ketik Password Baru (Untuk Reset)" : "Password"} className="w-full border p-2 rounded" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /><input placeholder="Nama Petugas/Peserta" className="w-full border p-2 rounded" value={newUser.nama} onChange={e => setNewUser({...newUser, nama: e.target.value})} /><select className="w-full border p-2 rounded" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}><option value="petugas">Petugas Scan</option><option value="admin">Admin</option><option value="panitia">Panitia</option><option value="peserta">Peserta (Hanya Lihat Rundown)</option></select><div className="flex gap-2"><button onClick={handleAddOrUpdateUser} className={`flex-1 text-white p-2 rounded font-bold ${editingId ? 'bg-orange-500' : 'bg-blue-600'}`}>{editingId ? 'Update / Reset' : 'Simpan User'}</button>{editingId && <button onClick={() => { setEditingId(null); setNewUser({ username: '', password: '', role: 'petugas', nama: '' }); }} className="bg-gray-400 text-white p-2 rounded font-bold">Batal</button>}</div></div></div><div className="space-y-2"><h3 className="font-bold text-gray-600 ml-1">List User Terdaftar</h3>{users.map(u => (<div key={u.username} className={`bg-white p-4 rounded-xl shadow-sm flex justify-between items-center ${editingId === u.username ? 'border-2 border-orange-400' : ''}`}><div><p className="font-bold">{u.username}</p><p className="text-xs text-gray-500">{u.nama} ({u.role})</p></div><div className="flex gap-2"><button onClick={() => startEditUser(u)} className="text-blue-500 bg-blue-50 p-2 rounded hover:bg-blue-100"><i data-lucide="pencil" width="16"></i></button>{u.username !== 'admin' && <button onClick={() => deleteFromCloud(`users/${u.username}`)} className="text-red-500 bg-red-50 p-2 rounded hover:bg-red-100"><i data-lucide="trash-2" width="16"></i></button>}</div></div>))}</div></div></MainContainer>;
 
-            /* PERBAIKAN 3: Input Tanggal menggunakan defaultValue dan key agar bisa diketik manual (YYYY) */
             if (view === 'manage_sessions') return <MainContainer><div className="max-w-md mx-auto"><button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button><div className="bg-white rounded-xl shadow p-6 mb-4"><h2 className="font-bold text-lg mb-4 flex gap-2 items-center">{editingId ? <><i data-lucide="edit"></i> Edit Sesi</> : <><i data-lucide="calendar-plus"></i> Buat Sesi Baru</>}</h2><div className="space-y-3"><div><label className="text-xs font-bold text-gray-500 uppercase">Nama Kegiatan</label><input placeholder="Contoh: Makan Pagi" className="w-full border p-2 rounded" value={sessionForm.title} onChange={e => setSessionForm({...sessionForm, title: e.target.value})} /></div><div className="flex gap-2"><div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase">Tanggal</label><input key={editingId ? `date-${editingId}` : 'date-new'} type="date" className="w-full border p-2 rounded" defaultValue={sessionForm.date} onChange={e => setSessionForm({...sessionForm, date: e.target.value})} /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase">Mulai</label><input type="time" className="w-full border p-2 rounded text-sm" value={sessionForm.timeStart} onChange={e => setSessionForm({...sessionForm, timeStart: e.target.value})} /></div><div className="flex-1"><label className="text-xs font-bold text-gray-500 uppercase">Selesai</label><input type="time" className="w-full border p-2 rounded text-sm" value={sessionForm.timeEnd} onChange={e => setSessionForm({...sessionForm, timeEnd: e.target.value})} /></div></div><div className="flex gap-2"><button onClick={handleAddOrUpdateSession} className={`flex-1 text-white p-3 rounded-xl font-bold shadow-lg transition ${editingId ? 'bg-orange-500' : 'bg-purple-600 hover:bg-purple-700'}`}>{editingId ? 'Update Sesi' : 'Buat Sesi'}</button>{editingId && <button onClick={() => { setEditingId(null); setSessionForm({ title: '', date: '', timeStart: '', timeEnd: '' }); }} className="bg-gray-400 text-white p-3 rounded-xl font-bold">Batal</button>}</div></div></div><div className="space-y-2"><h3 className="font-bold text-gray-600 ml-1">Daftar Sesi</h3>{sessions.map(s => (<div key={s.id} className={`bg-white p-4 rounded-xl shadow-sm flex justify-between items-start border-l-4 ${editingId === s.id ? 'border-orange-400 bg-orange-50' : 'border-purple-500'}`}><div><span className="font-bold text-slate-800 text-base block">{s.title}</span><div className="flex gap-2 text-xs text-gray-500 mt-1"><span className="flex items-center gap-1"><i data-lucide="calendar" width="12"></i> {formatShortDate(s.date)}</span><span className="flex items-center gap-1"><i data-lucide="clock" width="12"></i> {s.time}</span></div></div><div className="flex gap-2"><button onClick={() => startEditSession(s)} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button><button onClick={() => deleteFromCloud(`sessions/${s.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button></div></div>))}</div></div></MainContainer>;
 
             if (view === 'manage_rundown') return <MainContainer><div className="max-w-md mx-auto"><button onClick={handleBackToMenu} className="mb-4 text-slate-600 flex items-center gap-2"><i data-lucide="arrow-left"></i> Kembali</button>{canEditRundown && (<div className="bg-white rounded-xl shadow p-6 mb-4"><h2 className="font-bold text-lg mb-4 flex gap-2 items-center text-cyan-700">{editingId ? <><i data-lucide="edit"></i> Edit Jadwal</> : <><i data-lucide="list-plus"></i> Tambah Jadwal</>}</h2><div className="space-y-2 mb-3"><div className="flex gap-2"><div className="flex-1"><label className="text-[10px] uppercase font-bold text-gray-500">Tanggal</label><input type="date" className="w-full border p-2 rounded text-sm" value={rundownForm.date} onChange={e => setRundownForm({...rundownForm, date: e.target.value})} /></div><div className="w-24"><label className="text-[10px] uppercase font-bold text-gray-500">Jam</label><input type="time" className="w-full border p-2 rounded text-sm" value={rundownForm.time} onChange={e => setRundownForm({...rundownForm, time: e.target.value})} /></div></div><div><label className="text-[10px] uppercase font-bold text-gray-500">Nama Kegiatan</label><input placeholder="Contoh: Ibadah Pembuka" className="w-full border p-2 rounded text-sm" value={rundownForm.activity} onChange={e => setRundownForm({...rundownForm, activity: e.target.value})} /></div></div><div className="flex gap-2"><button onClick={handleAddOrUpdateRundown} className={`flex-1 text-white p-2 rounded font-bold text-sm transition ${editingId ? 'bg-orange-500' : 'bg-cyan-600 hover:bg-cyan-700'}`}>{editingId ? 'Update Jadwal' : 'Simpan Jadwal'}</button>{editingId && <button onClick={() => { setEditingId(null); setRundownForm({ date: '', time: '', activity: '' }); }} className="bg-gray-400 text-white p-2 rounded font-bold text-sm">Batal</button>}</div></div>)}<div className="space-y-2"><h3 className="font-bold text-gray-600 ml-1">Rundown Acara</h3>{rundown.length === 0 && <p className="text-gray-400 text-center text-sm italic">Belum ada jadwal.</p>}{rundown.map(r => (<div key={r.id} className={`bg-white p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 ${r.completed ? 'border-green-500 bg-green-50' : (editingId === r.id ? 'border-orange-400 bg-orange-50' : 'border-cyan-500')}`}><div className="flex gap-3 items-center flex-1">{canEditRundown ? (<button onClick={() => toggleRundownCheck(r)} className={`p-1 rounded ${r.completed ? 'text-green-600 bg-green-100' : 'text-gray-300 border border-gray-300'}`}>{r.completed ? <i data-lucide="check-square" width="20"></i> : <i data-lucide="square" width="20"></i>}</button>) : (r.completed && <i data-lucide="check" className="text-green-500" width="16"></i>)}<div className="text-center bg-white/50 px-2 py-1 rounded border border-gray-100"><span className="block text-[10px] text-cyan-600 font-bold uppercase">{formatShortDate(r.date)}</span><span className="block text-sm font-black text-gray-800">{r.time}</span></div><span className={`font-bold text-sm ${r.completed ? 'text-green-700 line-through decoration-2 opacity-70' : 'text-slate-700'}`}>{r.activity}</span></div>{!isPeserta && (<div className="flex gap-2 ml-2"><button onClick={() => { setRundownForm({ date: r.date, time: r.time, activity: r.activity }); setEditingId(r.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button><button onClick={() => deleteFromCloud(`rundown/${r.id}`)} className="text-red-400 hover:text-red-600"><i data-lucide="trash-2" width="16"></i></button></div>)}</div>))}</div></div></MainContainer>;
