@@ -15,9 +15,13 @@
 
     <style>
         body { touch-action: manipulation; }
-        /* Style untuk container scanner agar responsif di laptop/hp */
-        #reader { width: 100%; border-radius: 12px; overflow: hidden; }
-        video { object-fit: cover; border-radius: 12px; }
+        #reader { border: none !important; }
+        #reader__scan_region img { display: none; }
+        
+        #reader__dashboard_section_csr button { 
+            background-color: #4F46E5; color: white; border-radius: 8px; padding: 5px 10px; 
+            border: none; font-weight: bold; margin-top: 10px; cursor: pointer; width: 100%; font-size: 12px;
+        }
         
         .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
         @keyframes bounceIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
@@ -102,7 +106,7 @@
             const [showAddForm, setShowAddForm] = useState(false);
             const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
             const [isDownloading, setIsDownloading] = useState(false);
-            const [notification, setNotification] = useState(null);
+            const [notification, setNotification] = useState(null); // { msg, type: 'info'|'success'|'warning'|'error' }
             
             // --- STATE MANAJEMEN ---
             const [editingId, setEditingId] = useState(null);
@@ -115,16 +119,14 @@
             const [messageInput, setMessageInput] = useState(''); 
 
             const logoutTimerRef = useRef(null);
-            // Ref untuk menyimpan instance scanner agar tidak double render
             const scannerRef = useRef(null);
-            // Flag untuk mencegah start double
-            const isScannerRunning = useRef(false);
 
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
 
             // --- NOTIFICATION HELPER ---
             const showNotification = (msg, type = 'info') => {
                 setNotification({ msg, type });
+                // Auto hide setelah 4 detik
                 setTimeout(() => setNotification(null), 4000);
             };
 
@@ -184,19 +186,22 @@
 
             // --- PERIODIC CHECK: UPCOMING SESSIONS ---
             useEffect(() => {
-                if (!currentUser) return; 
+                if (!currentUser) return; // Hanya jalankan jika login
                 const checkUpcoming = setInterval(() => {
                     const now = new Date();
                     sessions.forEach(s => {
                         if (s.date && s.timeStart) {
                             const start = new Date(`${s.date}T${s.timeStart}`);
-                            const diff = (start - now) / 60000; 
+                            const diff = (start - now) / 60000; // selisih menit
+                            // Jika sesi akan mulai dalam 0-15 menit
                             if (diff > 0 && diff <= 15) {
+                                // Cek sederhana agar tidak spam notif yang sama terus menerus (bisa ditingkatkan)
+                                // Di sini kita biarkan muncul tiap menit sebagai pengingat agresif
                                 showNotification(`Sesi "${s.title}" akan dimulai dalam ${Math.ceil(diff)} menit!`, 'info');
                             }
                         }
                     });
-                }, 60000); 
+                }, 60000); // Cek tiap 1 menit
                 return () => clearInterval(checkUpcoming);
             }, [sessions, currentUser]);
 
@@ -333,25 +338,32 @@
                 }
             };
 
+            // --- HANDLE SESSION CHANGE & NOTIFICATION ---
             const handleSessionChange = (e) => {
                 const sessId = e.target.value;
                 setSelectedSession(sessId);
+                
                 const sess = sessions.find(s => s.id === sessId);
                 if(sess) {
+                    // Logic untuk cek status waktu
                     let msg = `Sesi "${sess.title}" dipilih.`;
                     let type = 'success';
+
                     if (sess.date && sess.timeEnd) {
+                        // Support data lama yang mungkin belum punya timeEnd terpisah
+                        // Kalau format lama (String range), kita coba parse
                         let endTimeStr = sess.timeEnd;
                         if (!endTimeStr && sess.time) {
                              const parts = sess.time.split(' - ');
                              if(parts.length >= 2) endTimeStr = parts[1].replace(' WIB','').trim();
                         }
+
                         if(endTimeStr) {
                             const end = new Date(`${sess.date}T${endTimeStr}`);
                             const now = new Date();
                             if (now > end) {
                                 msg = `PERHATIAN: Sesi "${sess.title}" telah berakhir pada ${endTimeStr}.`;
-                                type = 'warning'; 
+                                type = 'warning'; // Atau error(merah)
                             } else {
                                 msg = `Sesi "${sess.title}" sedang aktif.`;
                             }
@@ -360,6 +372,8 @@
                     showNotification(msg, type);
                 }
             };
+
+            // ... (Rest of logic: user, session, rundown, participant management remains same) ...
             
             const handleAddOrUpdateSession = () => {
                 const { title, date, timeStart, timeEnd } = sessionForm;
@@ -435,87 +449,16 @@
                 try { const d = new Date(dateString); if(isNaN(d.getTime())) return ''; return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }); } catch(e) { return ''; }
             };
 
-            // --- PERBAIKAN LOGIC SCANNER ---
-            // Menggunakan Html5Qrcode Core API (Bukan Scanner UI) untuk stabilitas Laptop/HP
-            useEffect(() => {
-                if (view === 'scan' && !scanResult) {
-                    // Delay sedikit agar DOM 'reader' siap
-                    const timer = setTimeout(() => {
-                        startScanner();
-                    }, 300);
-                    return () => {
-                        clearTimeout(timer);
-                        stopScanner();
-                    };
-                }
-                // Jika view berubah atau ada hasil scan, pastikan stop
-                if (view !== 'scan') {
-                    stopScanner();
-                }
-            }, [view, scanResult]);
-
-            const startScanner = async () => {
-                if (!document.getElementById("reader")) return;
-                if (isScannerRunning.current) return; // Jangan start kalau sedang jalan
-
-                // Bersihkan instance lama jika ada
-                if (scannerRef.current) {
-                    try { await scannerRef.current.stop(); } catch(e){}
-                }
-
-                // Buat instance baru
-                const html5QrCode = new Html5Qrcode("reader");
-                scannerRef.current = html5QrCode;
-                isScannerRunning.current = true;
-
-                const config = { 
-                    fps: 10, 
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0 // Penting untuk laptop agar tidak gepeng
-                };
-
-                try {
-                    // Start kamera. facingMode environment prioritas HP, fallback ke webcam laptop otomatis
-                    await html5QrCode.start(
-                        { facingMode: "environment" }, 
-                        config,
-                        (decodedText) => {
-                            // Sukses Scan
-                            handleScanSuccess(decodedText);
-                            // Pause sebentar agar tidak multiple scan
-                            html5QrCode.pause(true); 
-                        },
-                        (errorMessage) => {
-                            // Ignore frame error (normal saat scanning)
-                        }
-                    );
-                } catch (err) {
-                    console.error("Gagal start scanner:", err);
-                    isScannerRunning.current = false;
-                    // Jika environment gagal (kadang di laptop lama), coba user facing
-                    try {
-                         await html5QrCode.start({ facingMode: "user" }, config, (text) => handleScanSuccess(text), () => {});
-                    } catch(e) {
-                        alert("Gagal mengakses kamera. Pastikan izin kamera aktif.");
-                    }
-                }
+            // --- SCANNER LOGIC ---
+            useEffect(() => { if (view === 'scan' && !scanResult) { setTimeout(startScanner, 300); return () => stopScanner(); } }, [view, scanResult]);
+            const startScanner = () => {
+                if (scannerRef.current) { try { scannerRef.current.clear().catch(()=>{}); } catch(e){} }
+                if(!document.getElementById("reader")) return;
+                const scanner = new Html5QrcodeScanner("reader", { fps: 30, qrbox: 250, experimentalFeatures: { useBarCodeDetectorIfSupported: true } }, false);
+                scanner.render((decodedText) => { handleScanSuccess(decodedText); scanner.clear(); }, (error) => {});
+                scannerRef.current = scanner;
             };
-
-            const stopScanner = async () => {
-                if (scannerRef.current) {
-                    try {
-                        if (scannerRef.current.isScanning) {
-                            await scannerRef.current.stop();
-                        }
-                        scannerRef.current.clear();
-                    } catch (e) {
-                        console.log("Stop scanner info:", e);
-                    }
-                    scannerRef.current = null;
-                    isScannerRunning.current = false;
-                }
-            };
-
+            const stopScanner = () => { if (scannerRef.current) { try { scannerRef.current.clear(); } catch(e){} scannerRef.current = null; } };
             const handleScanSuccess = (qrId) => {
                 if (!selectedSession) { setScanResult({ success: false, msg: 'ERROR: Pilih Sesi Terlebih Dahulu!' }); return; }
                 const p = participants.find(item => item.id === qrId);
