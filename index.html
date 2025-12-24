@@ -94,28 +94,9 @@
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
 
-            // --- AUTO LOGOUT (INACTIVITY TIMER) ---
-            const logoutTimerRef = useRef(null);
-
-            const resetLogoutTimer = () => {
-                if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-                if (currentUser) {
-                    logoutTimerRef.current = setTimeout(() => {
-                        handleLogout(true); 
-                    }, 60000); // 1 Menit
-                }
-            };
-
-            useEffect(() => {
-                const events = ['click', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-                const handleActivity = () => resetLogoutTimer();
-                events.forEach(event => window.addEventListener(event, handleActivity));
-                resetLogoutTimer();
-                return () => {
-                    events.forEach(event => window.removeEventListener(event, handleActivity));
-                    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
-                };
-            }, [currentUser]);
+            // --- PERUBAHAN: TIMEOUT DIHAPUS ---
+            // Kode auto-logout yang sebelumnya ada di sini telah dihapus.
+            // Sesi akan tetap aktif selama browser terbuka.
 
             // --- DATA STATIS KELAS ---
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
@@ -301,7 +282,7 @@
                 if(force || confirm("Keluar dari aplikasi?")) {
                     setCurrentUser(null);
                     localStorage.removeItem('gkps_user'); 
-                    if(force) alert("Sesi berakhir karena tidak aktif selama 1 menit.");
+                    if(force) alert("Sesi berakhir.");
                     setView('login');
                 }
             };
@@ -440,7 +421,7 @@
                 return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
             };
 
-            // --- SCANNER LOGIC (FIXED FOR LAPTOP) ---
+            // --- SCANNER LOGIC (DIPERTAJAM UNTUK LAPTOP) ---
             useEffect(() => {
                 if (view === 'scan' && !scanResult) {
                     setTimeout(startScanner, 300);
@@ -450,11 +431,21 @@
 
             const startScanner = () => {
                 if (scannerRef.current) scannerRef.current.clear().catch(()=>{});
-                // PERBAIKAN: Hapus aspectRatio agar laptop bisa menyesuaikan sendiri
-                // Tambahkan config box agar tidak terlalu besar
+                
+                // PERBAIKAN UTAMA:
+                // 1. Menggunakan videoConstraints untuk meminta resolusi HD/High Quality dari kamera laptop
+                // 2. Mengaktifkan fitur eksperimental browser untuk deteksi barcode yang lebih cepat
                 const config = { 
-                    fps: 10, 
-                    qrbox: { width: 250, height: 250 } 
+                    fps: 15, // Naikkan FPS sedikit
+                    qrbox: { width: 250, height: 250 },
+                    videoConstraints: {
+                        facingMode: "user", // Kamera depan (laptop)
+                        width: { min: 640, ideal: 1280, max: 1920 }, // Paksa cari resolusi terbaik
+                        height: { min: 480, ideal: 720, max: 1080 } 
+                    },
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true // Gunakan engine browser native (lebih tajam)
+                    }
                 };
                 
                 const scanner = new Html5QrcodeScanner("reader", config, false);
@@ -981,7 +972,6 @@
                                             <button onClick={() => deleteFromCloud(`participants/${p.id}`)} className="text-red-500 bg-red-50 p-1 rounded hover:bg-red-100"><i data-lucide="trash-2" width="12"></i></button>
                                         </div>
                                         
-                                        {/* PERBAIKAN: Tombol Download Single */}
                                         <div className="absolute top-2 left-2">
                                             <button id={`btn-dl-${p.id}`} onClick={() => downloadSingleQR(p)} className="text-emerald-600 bg-emerald-50 p-1 rounded hover:bg-emerald-100" title="Download QR Ini">
                                                 <i data-lucide="download" width="12"></i>
