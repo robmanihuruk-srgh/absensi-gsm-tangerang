@@ -118,11 +118,12 @@
                 }
             }, [view]);
 
-            // FUNGSI UTAMA NAVIGASI & CLEANUP
+            // --- FUNGSI RESET & NAVIGASI (INTI PERBAIKAN) ---
             const setView = (newView) => {
                 // Reset semua state form/edit saat pindah halaman
                 setEditingId(null);
                 setEditingMessageId(null);
+                setShowAddForm(false); // Pastikan form input manual tertutup
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
@@ -134,22 +135,25 @@
                 setViewRaw(newView);
             };
 
-            // PERBAIKAN TOMBOL KEMBALI
             const handleBackToMenu = () => {
                 window.scrollTo({ top: 0, behavior: 'instant' });
+                
+                // Cek user login (Prioritas Memory -> Prioritas LocalStorage)
+                const saved = localStorage.getItem('gkps_user');
+                
                 if (currentUser) {
-                    // Gunakan setView (bukan setViewRaw) agar cleanup berjalan
                     setView('menu');
-                } else {
-                    const saved = localStorage.getItem('gkps_user');
-                    if (saved) {
-                        try {
-                            setCurrentUser(JSON.parse(saved));
-                            setView('menu'); // Gunakan setView di sini juga
-                        } catch(e) { setViewRaw('login'); }
-                    } else {
+                } else if (saved) {
+                    try {
+                        // Restore session jika hilang karena refresh
+                        const parsedUser = JSON.parse(saved);
+                        setCurrentUser(parsedUser);
+                        setView('menu');
+                    } catch(e) {
                         setViewRaw('login');
                     }
+                } else {
+                    setViewRaw('login');
                 }
             };
 
@@ -499,178 +503,4 @@
                                     <select className="w-full p-2 border mb-2" value={formData.kategori} onChange={e=>setFormData({...formData, kategori:e.target.value})}>
                                         <option>Anak Sekolah Minggu</option><option>GSM</option><option>Panitia</option><option>Umum</option>
                                     </select>
-                                    <select className="w-full p-2 border mb-2" value={formData.kelas} onChange={e=>setFormData({...formData, kelas:e.target.value})}>
-                                        <option value="">- Kelas -</option>{classList.map(c=><option key={c}>{c}</option>)}
-                                    </select>
-                                    <button onClick={handleAddOrUpdateParticipant} className="bg-indigo-600 text-white p-2 rounded w-full">{editingId?'Update':'Simpan'}</button>
-                                </div>
-                            )}
-
-                            {participants.length > 0 && (
-                                <button onClick={downloadAllQR} disabled={isDownloading} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold mb-6 flex justify-center gap-2">
-                                    {isDownloading ? 'Sedang Download...' : <><i data-lucide="download"></i> Download Semua QR</>}
-                                </button>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-3">
-                                {participants.map(p => (
-                                    <div key={p.id} className="border p-3 rounded text-center bg-white shadow relative">
-                                        <div className="absolute top-1 right-1 flex gap-1 z-10">
-                                            <button 
-                                                type="button"
-                                                onClick={(e) => downloadSingleQR(e, p)} 
-                                                className="bg-green-100 text-green-600 p-1.5 rounded hover:bg-green-200"
-                                                title="Download QR Ini Saja"
-                                            >
-                                                <i data-lucide="download" width="14" height="14"></i>
-                                            </button>
-                                            
-                                            <button onClick={() => { setFormData(p); setEditingId(p.id); setShowAddForm(true); window.scrollTo(0,0); }} className="bg-blue-50 text-blue-500 p-1.5 rounded"><i data-lucide="pencil" width="14" height="14"></i></button>
-                                            <button onClick={() => deleteFromCloud(`participants/${p.id}`)} className="bg-red-50 text-red-500 p-1.5 rounded"><i data-lucide="trash-2" width="14" height="14"></i></button>
-                                        </div>
-                                        <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" />
-                                        <p className="font-bold text-xs truncate">{p.nama}</p>
-                                        <p className="text-[10px] bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
-                                        {p.kelas && <p className="text-xs font-bold text-red-600">{p.kelas}</p>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-
-            if(view === 'manage_sessions') return (
-                <div className="p-4 bg-slate-100 min-h-screen"><div className="max-w-md mx-auto">
-                    <button onClick={handleBackToMenu} className="mb-4 flex gap-2 text-sm"><i data-lucide="arrow-left"></i> Kembali</button>
-                    <div className="bg-white p-4 rounded shadow mb-4">
-                        <h2 className="font-bold mb-2">Kelola Sesi</h2>
-                        <input className="w-full border p-2 mb-2" placeholder="Nama Kegiatan" value={sessionForm.title} onChange={e=>setSessionForm({...sessionForm, title:e.target.value})}/>
-                        <div className="flex gap-2 mb-2"><input type="date" className="border p-2 w-1/2" value={sessionForm.date} onChange={e=>setSessionForm({...sessionForm, date:e.target.value})}/>
-                        <input className="border p-2 w-1/2" placeholder="Jam" value={sessionForm.time} onChange={e=>setSessionForm({...sessionForm, time:e.target.value})}/></div>
-                        <button onClick={handleAddOrUpdateSession} className="bg-purple-600 text-white p-2 rounded w-full">{editingId?'Update':'Buat Sesi'}</button>
-                    </div>
-                    {sessions.map(s => (
-                        <div key={s.id} className="bg-white p-4 rounded shadow mb-2 flex justify-between">
-                            <div><span className="font-bold block">{s.title}</span><span className="text-xs text-gray-500">{s.date} - {s.time}</span></div>
-                            <div className="flex gap-2">
-                                <button onClick={()=>{setSessionForm(s); setEditingId(s.id)}} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
-                                <button onClick={()=>deleteFromCloud(`sessions/${s.id}`)} className="text-red-500"><i data-lucide="trash-2" width="16"></i></button>
-                            </div>
-                        </div>
-                    ))}
-                </div></div>
-            );
-
-            if(view === 'manage_users') return (
-                <div className="p-4 bg-slate-100 min-h-screen"><div className="max-w-md mx-auto">
-                    <button onClick={handleBackToMenu} className="mb-4 flex gap-2 text-sm"><i data-lucide="arrow-left"></i> Kembali</button>
-                    <div className="bg-white p-4 rounded shadow mb-4">
-                        <h2 className="font-bold mb-2">Kelola User</h2>
-                        <input className="w-full border p-2 mb-2" placeholder="Username" value={newUser.username} onChange={e=>setNewUser({...newUser, username:e.target.value})} disabled={!!editingId}/>
-                        <input className="w-full border p-2 mb-2" placeholder="Password" value={newUser.password} onChange={e=>setNewUser({...newUser, password:e.target.value})}/>
-                        <input className="w-full border p-2 mb-2" placeholder="Nama" value={newUser.nama} onChange={e=>setNewUser({...newUser, nama:e.target.value})}/>
-                        <select className="w-full border p-2 mb-2" value={newUser.role} onChange={e=>setNewUser({...newUser, role:e.target.value})}>
-                            <option value="petugas">Petugas</option><option value="admin">Admin</option><option value="panitia">Panitia</option><option value="peserta">Peserta</option>
-                        </select>
-                        <button onClick={handleAddOrUpdateUser} className="bg-blue-600 text-white p-2 rounded w-full">{editingId?'Update':'Simpan'}</button>
-                    </div>
-                    {users.map(u => (
-                        <div key={u.username} className="bg-white p-4 rounded shadow mb-2 flex justify-between">
-                            <div><span className="font-bold block">{u.username}</span><span className="text-xs text-gray-500">{u.nama} ({u.role})</span></div>
-                            {u.username !== 'admin' && <div className="flex gap-2">
-                                <button onClick={()=>{setNewUser(u); setEditingId(u.username)}} className="text-blue-500"><i data-lucide="pencil" width="16"></i></button>
-                                <button onClick={()=>deleteFromCloud(`users/${u.username}`)} className="text-red-500"><i data-lucide="trash-2" width="16"></i></button>
-                            </div>}
-                        </div>
-                    ))}
-                </div></div>
-            );
-
-            if(view === 'manage_rundown') return (
-                <div className="p-4 bg-slate-100 min-h-screen"><div className="max-w-md mx-auto">
-                    <button onClick={handleBackToMenu} className="mb-4 flex gap-2 text-sm"><i data-lucide="arrow-left"></i> Kembali</button>
-                    {safeUser.role !== 'peserta' && (
-                        <div className="bg-white p-4 rounded shadow mb-4">
-                            <h2 className="font-bold mb-2">Rundown</h2>
-                            <div className="flex gap-2 mb-2"><input type="date" className="border p-2 w-1/2" value={rundownForm.date} onChange={e=>setRundownForm({...rundownForm, date:e.target.value})}/>
-                            <input type="time" className="border p-2 w-1/2" value={rundownForm.time} onChange={e=>setRundownForm({...rundownForm, time:e.target.value})}/></div>
-                            <input className="w-full border p-2 mb-2" placeholder="Kegiatan" value={rundownForm.activity} onChange={e=>setRundownForm({...rundownForm, activity:e.target.value})}/>
-                            <button onClick={handleAddOrUpdateRundown} className="bg-cyan-600 text-white p-2 rounded w-full">{editingId?'Update':'Tambah'}</button>
-                        </div>
-                    )}
-                    {rundown.map(r => (
-                        <div key={r.id} className={`bg-white p-3 rounded shadow mb-2 flex justify-between items-center ${r.completed ? 'bg-green-50' : ''}`}>
-                            <div className="flex gap-2 items-center">
-                                {(isAdmin || isPanitia) && <button onClick={()=>saveToCloud(`rundown/${r.id}`, {...r, completed: !r.completed})}><i data-lucide={r.completed?"check-square":"square"}></i></button>}
-                                <div><span className={`block font-bold text-sm ${r.completed?'line-through':''}`}>{r.activity}</span><span className="text-xs text-gray-500">{r.time}</span></div>
-                            </div>
-                            {(isAdmin || isPanitia) && <div className="flex gap-2">
-                                <button onClick={()=>{setRundownForm(r); setEditingId(r.id)}} className="text-blue-500"><i data-lucide="pencil" width="14"></i></button>
-                                <button onClick={()=>deleteFromCloud(`rundown/${r.id}`)} className="text-red-500"><i data-lucide="trash-2" width="14"></i></button>
-                            </div>}
-                        </div>
-                    ))}
-                </div></div>
-            );
-
-            if (view === 'scan') return (
-                <div className="min-h-screen bg-black flex flex-col">
-                    <div className="p-4 bg-gray-900 text-white flex justify-between items-center z-10">
-                        <button onClick={handleBackToMenu} className="flex items-center gap-2"><i data-lucide="arrow-left"></i> Menu</button>
-                        <span className="font-bold">SCANNER</span><div className="w-16"></div>
-                    </div>
-                    <div className="bg-gray-800 p-2 flex justify-center">
-                        <select className="bg-gray-700 text-white text-sm p-2 rounded border border-gray-600" value={selectedSession || ''} onChange={(e) => setSelectedSession(e.target.value)}>
-                            <option value="" disabled>-- Pilih Sesi --</option>
-                            {sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                    </div>
-                    <div className="flex-1 bg-black flex flex-col justify-center items-center relative">
-                        {!selectedSession ? <p className="text-gray-400">Pilih Sesi Di Atas!</p> : (!scanResult && <div id="reader" className="w-full bg-black border-2 border-indigo-600 rounded"></div>)}
-                        {scanResult && (
-                            <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-6 z-50">
-                                <div className="bg-white w-full max-w-sm rounded p-6 text-center">
-                                    <h3 className={`text-2xl font-bold mb-2 ${scanResult.success ? 'text-green-600' : 'text-red-600'}`}>{scanResult.success ? 'BERHASIL' : 'GAGAL'}</h3>
-                                    <p className="mb-4">{scanResult.msg}</p>
-                                    {scanResult.p && <div className="bg-gray-100 p-2 rounded mb-4 font-bold">{scanResult.p.nama}<br/><span className="text-xs font-normal">{scanResult.p.kategori}</span></div>}
-                                    <button onClick={() => setScanResult(null)} className="bg-indigo-600 text-white w-full py-3 rounded font-bold">Scan Lagi</button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-
-            if (view === 'report') return (
-                <div className="p-4 bg-orange-50 min-h-screen"><div className="max-w-md mx-auto">
-                    <button onClick={handleBackToMenu} className="mb-4 flex gap-2 text-sm"><i data-lucide="arrow-left"></i> Kembali</button>
-                    <div className="bg-white rounded shadow overflow-hidden">
-                        <div className="p-4 border-b bg-orange-100">
-                            <h2 className="font-bold text-orange-800 mb-2">Laporan</h2>
-                            <select className="w-full border p-2 rounded mb-2" value={selectedSession || ''} onChange={(e) => setSelectedSession(e.target.value)}>
-                                <option value="" disabled>-- Pilih Sesi --</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                            {selectedSession && <button onClick={() => {
-                                const csv = ['No,ID,Nama,Kategori,Kelas,Waktu', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.kelas||'-'}", "${a.timestamp}"`)].join('\n');
-                                const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = `Absensi.csv`; link.click();
-                            }} className="w-full bg-green-600 text-white p-2 rounded font-bold text-sm">Download CSV</button>}
-                        </div>
-                        <div className="max-h-[500px] overflow-y-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-gray-50 text-xs uppercase"><tr><th className="p-3">No</th><th className="p-3">Nama</th><th className="p-3">Waktu</th></tr></thead>
-                                <tbody>{attendance.map((a, i) => (<tr key={i} className="border-b"><td className="p-3">{i+1}</td><td className="p-3 font-bold">{a.nama}</td><td className="p-3 text-xs">{a.timestamp}</td></tr>))}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div></div>
-            );
-
-            return <div className="min-h-screen flex items-center justify-center"><button onClick={() => window.location.reload()} className="bg-indigo-600 text-white p-2 rounded">Refresh</button></div>;
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<CloudAttendance />);
-    </script>
-</body>
-</html>
+                                    <select className="w-full p-2 border mb-2" value={formData.kelas} onChange={e=>setFormData({...formData, kelas:
