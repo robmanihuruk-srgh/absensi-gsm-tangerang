@@ -79,21 +79,22 @@
             const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
             const [isDownloading, setIsDownloading] = useState(false);
             
-            // --- STATE MANAJEMEN & EDITING ---
+            // --- STATE MANAJEMEN ---
             const [editingId, setEditingId] = useState(null);
             const [editingMessageId, setEditingMessageId] = useState(null);
             
+            // State Form Reset
             const [newUser, setNewUser] = useState({ username: '', password: '', role: 'petugas', nama: '' });
             const [sessionForm, setSessionForm] = useState({ title: '', date: '', time: '' });
             const [rundownForm, setRundownForm] = useState({ date: '', time: '', activity: '' });
             const [selfPassword, setSelfPassword] = useState('');
             const [messageInput, setMessageInput] = useState(''); 
 
-            // --- AUTO LOGOUT & UTIL ---
             const logoutTimerRef = useRef(null);
             const scannerRef = useRef(null);
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
 
+            // --- AUTO LOGOUT ---
             const resetLogoutTimer = () => {
                 if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
                 if (currentUser) {
@@ -112,19 +113,19 @@
                 };
             }, [currentUser]);
 
-            // --- NAVIGASI PINTAR (FIXED) ---
+            // --- NAVIGASI PINTAR (FIXED: RESET TOTAL) ---
             useLayoutEffect(() => {
-                // Scroll reset hanya jika bukan sedang download
-                if(!isDownloading) {
+                if (!isDownloading) {
                     window.scrollTo({ top: 0, behavior: 'instant' });
                 }
             }, [view]);
 
+            // Fungsi ini memastikan saat pindah halaman (termasuk kembali), semua sampah memori dibersihkan
             const setView = (newView) => {
-                // Reset semua state editing/form saat ganti halaman
                 setEditingId(null);
                 setEditingMessageId(null);
                 setShowAddForm(false); 
+                setScanResult(null); // Reset hasil scan
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
@@ -139,20 +140,28 @@
                 window.scrollTo({ top: 0, behavior: 'instant' });
                 
                 const saved = localStorage.getItem('gkps_user');
+                
+                // Prioritas 1: Jika state user masih ada, langsung ke menu
                 if (currentUser) {
                     setView('menu');
-                } else if (saved) {
+                } 
+                // Prioritas 2: Jika refresh, cek local storage
+                else if (saved) {
                     try {
                         const parsedUser = JSON.parse(saved);
                         setCurrentUser(parsedUser);
                         setView('menu');
-                    } catch(e) { setViewRaw('login'); }
-                } else {
+                    } catch(e) { 
+                        setViewRaw('login'); 
+                    }
+                } 
+                // Prioritas 3: Balik ke login
+                else {
                     setViewRaw('login');
                 }
             };
 
-            // --- REALTIME DATA ---
+            // --- REALTIME SYNC ---
             useEffect(() => {
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 100);
                 
@@ -160,29 +169,16 @@
                     if (!window.db) return;
                     setIsConnected(true);
 
+                    // Load Data
                     window.dbOnValue(window.dbRef(window.db, 'users'), (s) => {
                         const d = s.val();
                         if (!d) saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' });
                         else setUsers(Object.values(d));
                     });
-
-                    window.dbOnValue(window.dbRef(window.db, 'sessions'), (s) => {
-                        const d = s.val();
-                        setSessions(d ? Object.values(d).sort((a,b) => (a.date||'').localeCompare(b.date||'')) : []);
-                    });
-
-                    window.dbOnValue(window.dbRef(window.db, 'participants'), (s) => {
-                        setParticipants(s.val() ? Object.values(s.val()) : []);
-                    });
-
-                    window.dbOnValue(window.dbRef(window.db, 'rundown'), (s) => {
-                        const d = s.val();
-                        setRundown(d ? Object.values(d).sort((a,b) => (a.time||'').localeCompare(b.time||'')) : []);
-                    });
-
-                    window.dbOnValue(window.dbRef(window.db, 'messages'), (s) => {
-                        setMessages(s.val() ? Object.values(s.val()).reverse() : []);
-                    });
+                    window.dbOnValue(window.dbRef(window.db, 'sessions'), (s) => setSessions(s.val() ? Object.values(s.val()).sort((a,b) => (a.date||'').localeCompare(b.date||'')) : []));
+                    window.dbOnValue(window.dbRef(window.db, 'participants'), (s) => setParticipants(s.val() ? Object.values(s.val()) : []));
+                    window.dbOnValue(window.dbRef(window.db, 'rundown'), (s) => setRundown(s.val() ? Object.values(s.val()).sort((a,b) => (a.time||'').localeCompare(b.time||'')) : []));
+                    window.dbOnValue(window.dbRef(window.db, 'messages'), (s) => setMessages(s.val() ? Object.values(s.val()).reverse() : []));
                 }, 1000);
                 return () => clearTimeout(initSync);
             }, []);
@@ -194,32 +190,15 @@
 
             useEffect(() => {
                 if (!selectedSession || !window.db) return;
-                window.dbOnValue(window.dbRef(window.db, `attendance/${selectedSession}`), (s) => {
-                    setAttendance(s.val() ? Object.values(s.val()) : []);
-                });
+                window.dbOnValue(window.dbRef(window.db, `attendance/${selectedSession}`), (s) => setAttendance(s.val() ? Object.values(s.val()) : []));
             }, [selectedSession]);
 
-            useEffect(() => { 
-                setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50);
-            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages]);
+            useEffect(() => { setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 50); }, [view, scanResult, participants, users, sessions, rundown, editingId, messages]);
 
-            // --- DATABASE ACTIONS ---
-            const saveToCloud = (path, data) => {
-                if (!window.db) return alert("Offline!");
-                window.dbSet(window.dbRef(window.db, path), data).catch(err => alert("Gagal: " + err.message));
-            };
-
-            const deleteFromCloud = (path) => {
-                if (confirm("Hapus data ini?")) window.dbRemove(window.dbRef(window.db, path));
-            };
-
-            const handleResetAllData = () => {
-                if (prompt("Ketik 'HAPUS' untuk reset database.") === 'HAPUS') {
-                    window.dbRemove(window.dbRef(window.db, 'participants'));
-                    window.dbRemove(window.dbRef(window.db, 'attendance'));
-                    alert("Database Reset!");
-                }
-            };
+            // --- ACTIONS ---
+            const saveToCloud = (path, data) => { if (!window.db) return alert("Offline!"); window.dbSet(window.dbRef(window.db, path), data).catch(err => alert("Gagal: " + err.message)); };
+            const deleteFromCloud = (path) => { if (confirm("Hapus data ini?")) window.dbRemove(window.dbRef(window.db, path)); };
+            const handleResetAllData = () => { if (prompt("Ketik 'HAPUS' untuk reset database.") === 'HAPUS') { window.dbRemove(window.dbRef(window.db, 'participants')); window.dbRemove(window.dbRef(window.db, 'attendance')); alert("Database Reset!"); } };
 
             // --- AUTH ---
             const handleLogin = (e) => {
@@ -250,7 +229,7 @@
                 handleBackToMenu();
             };
 
-            // --- FEATURE HANDLERS ---
+            // --- HANDLERS ---
             const handleSendMessage = () => {
                 if(!messageInput) return;
                 if (editingMessageId) {
@@ -259,10 +238,7 @@
                     setEditingMessageId(null);
                 } else {
                     const id = `MSG-${Date.now()}`;
-                    saveToCloud(`messages/${id}`, {
-                        id, text: messageInput, sender: currentUser.nama,
-                        senderUsername: currentUser.username, role: currentUser.role, timestamp: new Date().toLocaleString('id-ID')
-                    });
+                    saveToCloud(`messages/${id}`, { id, text: messageInput, sender: currentUser.nama, senderUsername: currentUser.username, role: currentUser.role, timestamp: new Date().toLocaleString('id-ID') });
                 }
                 setMessageInput('');
             };
@@ -276,8 +252,8 @@
 
             const handleAddOrUpdateSession = () => {
                 if(!sessionForm.title) return;
-                const dateObj = new Date(sessionForm.date);
-                const name = `${sessionForm.title}, ${dateObj.toLocaleDateString('id-ID',{day:'numeric',month:'short'})} ${sessionForm.time}`;
+                const d = new Date(sessionForm.date);
+                const name = `${sessionForm.title}, ${d.toLocaleDateString('id-ID',{day:'numeric',month:'short'})} ${sessionForm.time}`;
                 const id = editingId || `SESS-${Date.now()}`;
                 saveToCloud(`sessions/${id}`, { id, name, ...sessionForm });
                 setSessionForm({ title: '', date: '', time: '' }); 
@@ -301,12 +277,13 @@
                 if(editingId) setShowAddForm(false); 
             };
 
-            // --- DOWNLOAD & CSV (FIXED) ---
+            // --- DOWNLOAD & CSV (FIXED 1-by-1) ---
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
 
             const downloadSingleQR = async (e, p) => {
+                // Prevent Default & Propagation: Kunci agar tidak refresh/halaman putih
                 e.preventDefault();
-                e.stopPropagation(); // Mencegah klik tembus ke kartu
+                e.stopPropagation(); 
                 try {
                     const res = await fetch(generateQRUrl(p.id));
                     const blob = await res.blob();
@@ -314,12 +291,12 @@
                     const link = document.createElement('a');
                     link.href = url;
                     link.download = `QR_${p.nama.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-                    link.style.display = 'none';
+                    link.style.display = 'none'; // Sembunyikan link
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
                     window.URL.revokeObjectURL(url);
-                } catch (e) { alert("Gagal Download"); }
+                } catch (e) { alert("Gagal Download: " + e.message); }
             };
 
             const downloadAllQR = async () => {
@@ -397,14 +374,14 @@
             // --- VIEWS ---
 
             if (view === 'login') return (
-                <div className="min-h-screen bg-indigo-900 flex items-center justify-center p-4">
+                <div key="view-login" className="min-h-screen bg-indigo-900 flex items-center justify-center p-4">
                     <div className="bg-white p-8 rounded-2xl w-full max-w-sm animate-bounce-in">
                         <div className="text-center mb-6">
                             <h1 className="text-2xl font-bold text-indigo-800">System Login</h1>
                             <p className="text-gray-500 text-sm">Absensi Retreat GSM GKPS</p>
                         </div>
                         <form onSubmit={handleLogin} className="space-y-4">
-                            {/* LOGIN FIELDS BLANK (Fix Request) */}
+                            {/* LOGIN BLANK: Tidak ada value binding, jadi kosong saat refresh */}
                             <input name="username" className="w-full p-3 border rounded-lg bg-gray-50" placeholder="Username" required autoComplete="off"/>
                             <input type="password" name="password" className="w-full p-3 border rounded-lg bg-gray-50" placeholder="Password" required autoComplete="off"/>
                             <button className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition">MASUK</button>
@@ -419,7 +396,7 @@
             const isPanitia = safeUser.role === 'panitia';
 
             if (view === 'menu') return (
-                <div className="min-h-screen bg-indigo-50 p-4 pt-8">
+                <div key="view-menu" className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 p-4 pt-8">
                     <div className="max-w-md mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
                         <div className="bg-indigo-700 p-6 text-white flex justify-between">
                             <div><h1 className="text-xl font-bold">Halo, {safeUser.nama}</h1><span className="text-xs bg-indigo-800 px-2 py-1 rounded uppercase mt-1 inline-block">{safeUser.role}</span></div>
@@ -446,7 +423,6 @@
                 </div>
             );
 
-            // --- SUB VIEWS ---
             if (view === 'change_password') return (
                 <div className="p-4 bg-slate-100 min-h-screen"><div className="max-w-md mx-auto bg-white p-6 rounded shadow">
                     <button onClick={handleBackToMenu} className="mb-4 flex gap-2 text-sm text-gray-600"><i data-lucide="arrow-left"></i> Kembali</button>
@@ -512,15 +488,15 @@
 
                             <div className="grid grid-cols-2 gap-3">
                                 {participants.map(p => (
-                                    <div key={p.id} className="border p-3 rounded text-center bg-white shadow relative hover:shadow-md transition">
+                                    <div key={p.id} className="border p-3 rounded text-center bg-white shadow-sm relative hover:shadow-md transition">
                                         <div className="absolute top-1 right-1 flex gap-1 z-10">
-                                            {/* TOMBOL DOWNLOAD SATU PER SATU (FIXED) */}
+                                            {/* TOMBOL DOWNLOAD SATU PER SATU (FIXED: stopPropagation) */}
                                             <button type="button" onClick={(e) => downloadSingleQR(e, p)} className="bg-green-100 text-green-600 p-1.5 rounded hover:bg-green-200"><i data-lucide="download" width="14" height="14"></i></button>
                                             <button onClick={() => { setFormData(p); setEditingId(p.id); setShowAddForm(true); window.scrollTo({top:0, behavior:'smooth'}); }} className="bg-blue-50 text-blue-500 p-1.5 rounded"><i data-lucide="pencil" width="14" height="14"></i></button>
                                             <button onClick={() => deleteFromCloud(`participants/${p.id}`)} className="bg-red-50 text-red-500 p-1.5 rounded"><i data-lucide="trash-2" width="14" height="14"></i></button>
                                         </div>
                                         <img src={generateQRUrl(p.id)} className="w-24 mx-auto mb-2 mix-blend-multiply" loading="lazy" />
-                                        <p className="font-bold text-xs truncate">{p.nama}</p>
+                                        <p className="font-bold text-xs truncate text-slate-800">{p.nama}</p>
                                         <p className="text-[10px] bg-gray-100 rounded px-1 inline-block mt-1">{p.kategori}</p>
                                         {p.kelas && <p className="text-xs font-bold text-red-600 mt-1">{p.kelas}</p>}
                                     </div>
@@ -599,7 +575,7 @@
                         <span className="font-bold">SCANNER</span><div className="w-16"></div>
                     </div>
                     <div className="bg-gray-800 p-2 flex justify-center">
-                        <select className="bg-gray-700 text-white text-sm p-2 rounded border border-gray-600" value={selectedSession || ''} onChange={(e) => setSelectedSession(e.target.value)}>
+                        <select className="bg-gray-700 text-white text-sm p-2 rounded border border-gray-600 max-w-xs" value={selectedSession || ''} onChange={(e) => setSelectedSession(e.target.value)}>
                             <option value="" disabled>-- Pilih Sesi --</option>{sessions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                     </div>
