@@ -113,13 +113,14 @@
 
             // --- NAVIGASI & SCROLL FIX ---
             useLayoutEffect(() => {
-                // Hanya scroll ke atas jika BUKAN sedang download
                 if (!isDownloading) {
                     window.scrollTo({ top: 0, behavior: 'instant' });
                 }
             }, [view]);
 
+            // FUNGSI UTAMA NAVIGASI & CLEANUP
             const setView = (newView) => {
+                // Reset semua state form/edit saat pindah halaman
                 setEditingId(null);
                 setEditingMessageId(null);
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
@@ -128,19 +129,23 @@
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
                 setSelfPassword('');
                 setMessageInput('');
+                
+                // Set halaman baru
                 setViewRaw(newView);
             };
 
+            // PERBAIKAN TOMBOL KEMBALI
             const handleBackToMenu = () => {
                 window.scrollTo({ top: 0, behavior: 'instant' });
                 if (currentUser) {
-                    setViewRaw('menu');
+                    // Gunakan setView (bukan setViewRaw) agar cleanup berjalan
+                    setView('menu');
                 } else {
                     const saved = localStorage.getItem('gkps_user');
                     if (saved) {
                         try {
                             setCurrentUser(JSON.parse(saved));
-                            setViewRaw('menu');
+                            setView('menu'); // Gunakan setView di sini juga
                         } catch(e) { setViewRaw('login'); }
                     } else {
                         setViewRaw('login');
@@ -150,7 +155,6 @@
 
             // --- LOAD ICONS & DATA ---
             useEffect(() => {
-                // Memaksa Lucide render ulang setiap kali ada perubahan data penting
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 300);
             }, [view, participants, users, sessions, rundown, messages]);
 
@@ -329,30 +333,21 @@
                 setScanResult({ success: true, msg: 'Berhasil!', p, time: att.timestamp });
             };
 
-            // --- FITUR DOWNLOAD (PERBAIKAN UTAMA) ---
+            // --- FITUR DOWNLOAD ---
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
 
             const downloadSingleQR = async (e, p) => {
-                // 1. Mencegah navigasi halaman / refresh / scroll jump
                 e.preventDefault();
                 e.stopPropagation();
-
                 try {
-                    // 2. Fetch gambar sebagai Blob (File object) di memori
                     const response = await fetch(generateQRUrl(p.id));
                     const blob = await response.blob();
-                    
-                    // 3. Buat URL sementara
                     const url = window.URL.createObjectURL(blob);
-                    
-                    // 4. Buat element anchor tersembunyi
                     const link = document.createElement('a');
                     link.href = url;
-                    // Nama file yang bersih
                     link.download = `QR_${p.nama.replace(/[^a-zA-Z0-9]/g, '_')}.png`; 
+                    link.style.display = 'none'; // Tambahan keamanan style
                     document.body.appendChild(link);
-                    
-                    // 5. Klik otomatis dan bersihkan
                     link.click();
                     document.body.removeChild(link);
                     window.URL.revokeObjectURL(url);
@@ -378,7 +373,6 @@
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                        // Delay agar browser tidak nge-lag
                         await new Promise(r => setTimeout(r, 800)); 
                     } catch (e) { console.log("Skip error"); }
                 }
@@ -394,7 +388,7 @@
                     const lines = ev.target.result.split('\n');
                     let count = 0;
                     lines.forEach((line, idx) => {
-                        if(idx === 0) return; // Skip header
+                        if(idx === 0) return; 
                         const [nama, kategori, kelas] = line.split(',').map(s => s?.trim());
                         if (nama) {
                             const id = `GSM-${Date.now()}-${idx}`;
@@ -453,7 +447,6 @@
                 </div>
             );
 
-            // --- SIMPLE VIEWS (PASSWORD, MESSAGES, USERS, SESSIONS, RUNDOWN) ---
             if (view === 'change_password') return (
                 <div className="p-4 bg-slate-100 min-h-screen"><div className="max-w-md mx-auto bg-white p-6 rounded shadow">
                     <button onClick={handleBackToMenu} className="mb-4 flex gap-2 text-sm"><i data-lucide="arrow-left"></i> Kembali</button>
@@ -486,7 +479,6 @@
                 </div></div>
             );
 
-            // --- GENERATE / DATABASE VIEW (TEMPAT FITUR DOWNLOAD) ---
             if (view === 'generate') return (
                 <div className="min-h-screen bg-slate-100 p-4">
                     <div className="max-w-md mx-auto">
@@ -524,7 +516,6 @@
                                 {participants.map(p => (
                                     <div key={p.id} className="border p-3 rounded text-center bg-white shadow relative">
                                         <div className="absolute top-1 right-1 flex gap-1 z-10">
-                                            {/* TOMBOL DOWNLOAD SATU PER SATU */}
                                             <button 
                                                 type="button"
                                                 onClick={(e) => downloadSingleQR(e, p)} 
@@ -549,7 +540,6 @@
                 </div>
             );
 
-            // --- VIEW SESSIONS & USERS & RUNDOWN (Standard Views) ---
             if(view === 'manage_sessions') return (
                 <div className="p-4 bg-slate-100 min-h-screen"><div className="max-w-md mx-auto">
                     <button onClick={handleBackToMenu} className="mb-4 flex gap-2 text-sm"><i data-lucide="arrow-left"></i> Kembali</button>
