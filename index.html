@@ -113,19 +113,18 @@
                 };
             }, [currentUser]);
 
-            // --- NAVIGASI PINTAR (FIXED: RESET TOTAL) ---
+            // --- NAVIGASI PINTAR ---
             useLayoutEffect(() => {
                 if (!isDownloading) {
                     window.scrollTo({ top: 0, behavior: 'instant' });
                 }
             }, [view]);
 
-            // Fungsi ini memastikan saat pindah halaman (termasuk kembali), semua sampah memori dibersihkan
             const setView = (newView) => {
                 setEditingId(null);
                 setEditingMessageId(null);
                 setShowAddForm(false); 
-                setScanResult(null); // Reset hasil scan
+                setScanResult(null); 
                 setNewUser({ username: '', password: '', role: 'petugas', nama: '' });
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
@@ -141,11 +140,9 @@
                 
                 const saved = localStorage.getItem('gkps_user');
                 
-                // Prioritas 1: Jika state user masih ada, langsung ke menu
                 if (currentUser) {
                     setView('menu');
                 } 
-                // Prioritas 2: Jika refresh, cek local storage
                 else if (saved) {
                     try {
                         const parsedUser = JSON.parse(saved);
@@ -155,7 +152,6 @@
                         setViewRaw('login'); 
                     }
                 } 
-                // Prioritas 3: Balik ke login
                 else {
                     setViewRaw('login');
                 }
@@ -277,11 +273,11 @@
                 if(editingId) setShowAddForm(false); 
             };
 
-            // --- DOWNLOAD & CSV (FIXED 1-by-1) ---
+            // --- DOWNLOAD & CSV (PERBAIKAN FITUR DOWNLOAD) ---
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
 
+            // 1. Download Single (Diperbaiki agar aman dan bersih memori)
             const downloadSingleQR = async (e, p) => {
-                // Prevent Default & Propagation: Kunci agar tidak refresh/halaman putih
                 e.preventDefault();
                 e.stopPropagation(); 
                 try {
@@ -290,35 +286,52 @@
                     const url = window.URL.createObjectURL(blob);
                     const link = document.createElement('a');
                     link.href = url;
+                    // Regex aman untuk semua OS (Windows/Mac)
                     link.download = `QR_${p.nama.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-                    link.style.display = 'none'; // Sembunyikan link
+                    link.style.display = 'none';
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
-                    window.URL.revokeObjectURL(url);
+                    window.URL.revokeObjectURL(url); // Bersihkan memori
                 } catch (e) { alert("Gagal Download: " + e.message); }
             };
 
-            const downloadAllQR = async () => {
+            // 2. Download All (Fungsi yang sudah disempurnakan)
+            const downloadAllQR = async (e) => {
+                if (e) e.preventDefault(); 
+                
                 if (participants.length === 0) return;
+
+                // Konfirmasi user
+                if(!confirm(`Siap mendownload ${participants.length} QR Code?\n\nBrowser mungkin meminta izin 'Allow Multiple Downloads', silakan klik 'Allow'.`)) return;
+
                 setIsDownloading(true);
-                alert("Sedang mendownload... Jangan tutup browser.");
+
                 for (const p of participants) {
                     try {
                         const res = await fetch(generateQRUrl(p.id));
                         const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        
                         const link = document.createElement('a');
-                        link.href = URL.createObjectURL(blob);
-                        link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                        link.href = url;
+                        // Menggunakan regex yang sama agar konsisten
+                        link.download = `QR_${p.nama.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
                         link.style.display = 'none';
+                        
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                        await new Promise(r => setTimeout(r, 600)); 
-                    } catch (e) {}
+                        
+                        window.URL.revokeObjectURL(url); // PENTING: Cegah memory leak
+                        await new Promise(r => setTimeout(r, 800)); // Delay agar aman
+                    } catch (e) {
+                        console.log(`Gagal download untuk ${p.nama}`, e);
+                    }
                 }
+                
                 setIsDownloading(false);
-                alert("Selesai!");
+                alert("Semua proses download selesai!");
             };
 
             const handleCSV = (e) => {
@@ -381,7 +394,6 @@
                             <p className="text-gray-500 text-sm">Absensi Retreat GSM GKPS</p>
                         </div>
                         <form onSubmit={handleLogin} className="space-y-4">
-                            {/* LOGIN BLANK: Tidak ada value binding, jadi kosong saat refresh */}
                             <input name="username" className="w-full p-3 border rounded-lg bg-gray-50" placeholder="Username" required autoComplete="off"/>
                             <input type="password" name="password" className="w-full p-3 border rounded-lg bg-gray-50" placeholder="Password" required autoComplete="off"/>
                             <button className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition">MASUK</button>
@@ -481,7 +493,7 @@
                             )}
 
                             {participants.length > 0 && (
-                                <button onClick={downloadAllQR} disabled={isDownloading} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold mb-6 flex justify-center gap-2">
+                                <button onClick={(e) => downloadAllQR(e)} disabled={isDownloading} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold mb-6 flex justify-center gap-2">
                                     {isDownloading ? 'Sedang Download...' : <><i data-lucide="download"></i> Download Semua QR</>}
                                 </button>
                             )}
@@ -490,7 +502,6 @@
                                 {participants.map(p => (
                                     <div key={p.id} className="border p-3 rounded text-center bg-white shadow-sm relative hover:shadow-md transition">
                                         <div className="absolute top-1 right-1 flex gap-1 z-10">
-                                            {/* TOMBOL DOWNLOAD SATU PER SATU (FIXED: stopPropagation) */}
                                             <button type="button" onClick={(e) => downloadSingleQR(e, p)} className="bg-green-100 text-green-600 p-1.5 rounded hover:bg-green-200"><i data-lucide="download" width="14" height="14"></i></button>
                                             <button onClick={() => { setFormData(p); setEditingId(p.id); setShowAddForm(true); window.scrollTo({top:0, behavior:'smooth'}); }} className="bg-blue-50 text-blue-500 p-1.5 rounded"><i data-lucide="pencil" width="14" height="14"></i></button>
                                             <button onClick={() => deleteFromCloud(`participants/${p.id}`)} className="bg-red-50 text-red-500 p-1.5 rounded"><i data-lucide="trash-2" width="14" height="14"></i></button>
