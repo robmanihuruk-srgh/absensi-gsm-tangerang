@@ -501,61 +501,59 @@
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
             const getSessionName = (id) => sessions.find(s => s.id === id)?.name || 'Unknown Session';
 
-            // --- FUNGSI DOWNLOAD SINGLE QR (DIPERBAIKI) ---
+            // --- FUNGSI DOWNLOAD SINGLE QR ---
             const downloadSingleQR = async (p) => {
                 try {
+                    // Simpan posisi scroll saat ini agar tidak melompat
+                    const scrollPos = window.scrollY;
+
                     const res = await fetch(generateQRUrl(p.id));
                     const blob = await res.blob();
-                    const url = URL.createObjectURL(blob); // Buat URL lokal
-                    
                     const link = document.createElement('a');
-                    link.href = url;
+                    link.href = URL.createObjectURL(blob);
                     link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
-                    link.style.display = 'none'; // Sembunyikan elemen agar UI tidak goyang
-                    
+                    // PENTING: Sembunyikan link agar browser tidak scrolling ke elemen ini
+                    link.style.display = 'none'; 
                     document.body.appendChild(link);
                     link.click();
-                    document.body.removeChild(link); // Hapus elemen
+                    document.body.removeChild(link);
                     
-                    URL.revokeObjectURL(url); // Hapus memori (Penting!)
+                    // Kembalikan posisi scroll (jaga-jaga)
+                    window.scrollTo(0, scrollPos);
                 } catch (e) { 
+                    console.error(e); 
+                    // Fallback jika fetch gagal (misal kena CORS), buka di tab baru
                     window.open(generateQRUrl(p.id), '_blank');
                 }
             };
 
-            // --- FUNGSI DOWNLOAD ALL QR (DIPERBAIKI UNTUK MENCEGAH WHITE SCREEN) ---
             const downloadAllQR = async () => {
                 if (participants.length === 0) return;
-                
-                // Gunakan confirm agar lebih user friendly daripada alert blocking di awal
-                if(!confirm(`Mendownload ${participants.length} QR Code. Lanjutkan?`)) return;
-
                 setIsDownloading(true);
-                const scrollPos = window.scrollY; // Simpan posisi scroll
+                alert("Mendownload QR Code... (Mohon Jangan Tutup Browser)");
+                
+                // Simpan posisi scroll agar tidak reset ke atas
+                const scrollPos = window.scrollY;
 
                 for (const p of participants) {
                     try {
                         const res = await fetch(generateQRUrl(p.id));
                         const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-
                         const link = document.createElement('a');
-                        link.href = url;
+                        link.href = URL.createObjectURL(blob);
                         link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
-                        link.style.display = 'none'; // PENTING: Sembunyikan link agar layout tidak rusak
-                        
+                        // PENTING: Sembunyikan link
+                        link.style.display = 'none';
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
-                        
-                        URL.revokeObjectURL(url); // PENTING: Bebaskan memory (Mencegah Crash/White Screen)
-
-                        // Delay sedikit agar browser tidak crash karena proses terlalu cepat
-                        await new Promise(r => setTimeout(r, 500)); 
+                        // Delay sedikit agar browser tidak menganggap spam download
+                        await new Promise(r => setTimeout(r, 600)); 
                     } catch (e) { console.error(e); }
                 }
                 
-                window.scrollTo(0, scrollPos); // Kembalikan posisi scroll
+                // Pastikan posisi scroll tetap
+                window.scrollTo(0, scrollPos);
                 setIsDownloading(false);
                 alert("Selesai Download!");
             };
@@ -594,7 +592,7 @@
                         <form onSubmit={handleLogin} className="space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Username</label>
-                                <input name="username" className="w-full p-3 border rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="admin" required/>
+                                <input name="username" className="w-full p-3 border rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="username" required/>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Password</label>
