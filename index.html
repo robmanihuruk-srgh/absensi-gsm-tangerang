@@ -501,81 +501,61 @@
             const generateQRUrl = (id) => `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${id}`;
             const getSessionName = (id) => sessions.find(s => s.id === id)?.name || 'Unknown Session';
 
-            // --- FUNGSI DOWNLOAD SINGLE QR (FIXED) ---
+            // --- FUNGSI DOWNLOAD SINGLE QR (DIPERBAIKI) ---
             const downloadSingleQR = async (p) => {
                 try {
-                    const scrollPos = window.scrollY;
-
                     const res = await fetch(generateQRUrl(p.id));
                     const blob = await res.blob();
-                    // Gunakan createObjectURL dan revoke untuk mencegah memory leak
-                    const objUrl = URL.createObjectURL(blob);
+                    const url = URL.createObjectURL(blob); // Buat URL lokal
                     
                     const link = document.createElement('a');
-                    link.href = objUrl;
+                    link.href = url;
                     link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                    link.style.display = 'none'; // Sembunyikan elemen agar UI tidak goyang
                     
-                    // Style fixed agar tidak menggeser layout (penyebab layar putih/flicker)
-                    link.style.display = 'none'; 
-                    link.style.position = 'fixed';
-                    link.style.left = '-9999px';
-
                     document.body.appendChild(link);
                     link.click();
-                    document.body.removeChild(link);
+                    document.body.removeChild(link); // Hapus elemen
                     
-                    // Bebaskan memory
-                    URL.revokeObjectURL(objUrl);
-
-                    window.scrollTo(0, scrollPos);
+                    URL.revokeObjectURL(url); // Hapus memori (Penting!)
                 } catch (e) { 
-                    console.error(e); 
                     window.open(generateQRUrl(p.id), '_blank');
                 }
             };
 
-            // --- FUNGSI DOWNLOAD ALL QR (FIXED - NO WHITE SCREEN) ---
+            // --- FUNGSI DOWNLOAD ALL QR (DIPERBAIKI UNTUK MENCEGAH WHITE SCREEN) ---
             const downloadAllQR = async () => {
                 if (participants.length === 0) return;
                 
                 // Gunakan confirm agar lebih user friendly daripada alert blocking di awal
-                if(!confirm(`Mendownload ${participants.length} QR Code akan memakan waktu. Lanjutkan?`)) return;
+                if(!confirm(`Mendownload ${participants.length} QR Code. Lanjutkan?`)) return;
 
                 setIsDownloading(true);
-                
-                // Simpan posisi scroll agar tidak reset ke atas
-                const scrollPos = window.scrollY;
+                const scrollPos = window.scrollY; // Simpan posisi scroll
 
                 for (const p of participants) {
                     try {
                         const res = await fetch(generateQRUrl(p.id));
                         const blob = await res.blob();
-                        const objUrl = URL.createObjectURL(blob);
+                        const url = URL.createObjectURL(blob);
 
                         const link = document.createElement('a');
-                        link.href = objUrl;
+                        link.href = url;
                         link.download = `QR_${p.nama.replace(/\s+/g, '_')}.png`;
+                        link.style.display = 'none'; // PENTING: Sembunyikan link agar layout tidak rusak
                         
-                        // FIX UTAMA: Position fixed agar tidak merusak layout saat di-append ke body
-                        link.style.display = 'none';
-                        link.style.position = 'fixed';
-                        link.style.left = '-9999px';
-                        link.style.top = '0';
-
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
                         
-                        // FIX UTAMA: Bebaskan memory (Mencegah Crash/White Screen)
-                        URL.revokeObjectURL(objUrl);
+                        URL.revokeObjectURL(url); // PENTING: Bebaskan memory (Mencegah Crash/White Screen)
 
-                        // Delay sedikit agar browser tidak menganggap spam download
-                        await new Promise(r => setTimeout(r, 600)); 
+                        // Delay sedikit agar browser tidak crash karena proses terlalu cepat
+                        await new Promise(r => setTimeout(r, 500)); 
                     } catch (e) { console.error(e); }
                 }
                 
-                // Pastikan posisi scroll tetap
-                window.scrollTo(0, scrollPos);
+                window.scrollTo(0, scrollPos); // Kembalikan posisi scroll
                 setIsDownloading(false);
                 alert("Selesai Download!");
             };
@@ -1091,7 +1071,6 @@
                                 {selectedSession && (
                                     <button onClick={() => {
                                         const sessionName = getSessionName(selectedSession);
-                                        // MODIFIKASI: Username Petugas di Export CSV
                                         const csv = ['No,ID,Nama,Kategori,Kelas,Waktu,Petugas', ...attendance.map((a,i) => `${i+1},${a.id},"${a.nama}",${a.kategori},"${a.kelas||'-'}", "${a.timestamp}",${a.device||'-'}`)].join('\n');
                                         const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); link.download = `Absensi_${sessionName}.csv`; link.click();
                                     }} className="w-full bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-2 rounded-lg font-bold flex justify-center gap-1 items-center transition shadow-sm"><i data-lucide="download" width="14"></i> EXPORT CSV SESI INI</button>
