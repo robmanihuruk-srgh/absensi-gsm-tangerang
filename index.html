@@ -83,7 +83,6 @@
             const [showAddForm, setShowAddForm] = useState(false);
             const [formData, setFormData] = useState({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
             const [isDownloading, setIsDownloading] = useState(false);
-            const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false); // State Modal Logout
             
             // --- STATE MANAJEMEN & EDITING ---
             const [editingId, setEditingId] = useState(null);
@@ -229,10 +228,10 @@
                 return () => unsub();
             }, [selectedSession]);
 
-            // Fix Icons render saat modal terbuka
+            // Fix Icons render
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 100);
-            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages, editingMessageId, isLogoutModalOpen]);
+            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages, editingMessageId]);
 
             // --- DATABASE ACTIONS ---
             const saveToCloud = (path, data) => {
@@ -277,16 +276,15 @@
             };
 
             // --- FUNGSI KELUAR / LOGOUT (DIPERBAIKI) ---
-            // Menggunakan Modal Custom agar tidak diblokir browser
-            const handleLogoutClick = () => {
-                setIsLogoutModalOpen(true);
-            };
-
-            const confirmLogout = () => {
-                setCurrentUser(null);
-                localStorage.removeItem('gkps_user'); 
-                setIsLogoutModalOpen(false);
-                setView('login');
+            const handleLogout = (e) => {
+                // Tambahan: Prevent Default untuk memastikan event klik valid
+                if(e) e.preventDefault();
+                
+                if(window.confirm("Apakah Anda yakin ingin KELUAR dari aplikasi?")) {
+                    setCurrentUser(null);
+                    localStorage.removeItem('gkps_user'); 
+                    setView('login');
+                }
             };
 
             const handleChangeSelfPassword = () => {
@@ -590,9 +588,9 @@
                                     <h1 className="text-xl font-bold">Halo, {safeUser.nama}</h1>
                                     <p className="opacity-80 text-xs uppercase tracking-wide bg-indigo-800 inline-block px-2 py-1 rounded mt-1">{safeUser.role}</p>
                                 </div>
-                                {/* --- TOMBOL KELUAR --- */}
-                                <button onClick={handleLogoutClick} className="bg-indigo-800 hover:bg-red-500 p-2 rounded text-white text-xs transition flex items-center gap-1" title="Keluar / Logout">
-                                    <i data-lucide="log-out" width="16"></i> <span className="hidden sm:inline">Keluar</span>
+                                {/* --- TOMBOL KELUAR (DIPERBAIKI) --- */}
+                                <button type="button" onClick={handleLogout} className="relative z-10 bg-indigo-800 hover:bg-red-500 p-2 rounded text-white text-xs transition flex items-center gap-1 cursor-pointer" title="Keluar / Logout">
+                                    <i data-lucide="log-out" width="16" className="pointer-events-none"></i> <span className="hidden sm:inline pointer-events-none">Keluar</span>
                                 </button>
                             </div>
                         </div>
@@ -679,7 +677,8 @@
                         <div className="w-full max-w-sm">
                             <div className="flex justify-between items-center mb-6">
                                 <button onClick={handleBackToMenu} className="text-white flex items-center gap-2 bg-white/10 p-2 rounded-lg w-fit hover:bg-white/20"><i data-lucide="arrow-left"></i> Kembali</button>
-                                <button onClick={handleLogoutClick} className="text-red-300 flex items-center gap-2 bg-white/5 p-2 rounded-lg w-fit hover:bg-red-900/50 hover:text-white transition"><i data-lucide="log-out" width="16"></i> Keluar</button>
+                                {/* TOMBOL KELUAR DIPERBAIKI */}
+                                <button type="button" onClick={handleLogout} className="text-red-300 flex items-center gap-2 bg-white/5 p-2 rounded-lg w-fit hover:bg-red-900/50 hover:text-white transition cursor-pointer relative z-10"><i data-lucide="log-out" width="16" className="pointer-events-none"></i> <span className="pointer-events-none">Keluar</span></button>
                             </div>
                             
                             <div className="barcode-card rounded-2xl shadow-2xl overflow-hidden relative text-white">
@@ -1106,32 +1105,13 @@
 
             // --- JARING PENGAMAN (SAFETY NET) & MODAL LAYOUT ---
             return (
-                <>
-                    {/* MODAL KONFIRMASI LOGOUT */}
-                    {isLogoutModalOpen && (
-                        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm animate-bounce-in">
-                            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm text-center">
-                                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <i data-lucide="log-out" className="text-red-600 w-8 h-8"></i>
-                                </div>
-                                <h3 className="text-xl font-bold text-slate-800 mb-2">Konfirmasi Keluar</h3>
-                                <p className="text-slate-600 mb-6">Apakah Anda yakin ingin keluar dari aplikasi?</p>
-                                <div className="flex gap-3">
-                                    <button onClick={() => setIsLogoutModalOpen(false)} className="flex-1 py-3 px-4 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition">Batal</button>
-                                    <button onClick={confirmLogout} className="flex-1 py-3 px-4 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 transition shadow-lg">Ya, Keluar</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="min-h-screen flex items-center justify-center bg-gray-50 text-center p-4">
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-400 mb-2">Memuat...</h1>
-                            <p className="text-sm text-gray-400 mb-4">Jika halaman tidak muncul, klik tombol di bawah.</p>
-                            <button onClick={() => window.location.reload()} className="bg-indigo-600 text-white px-4 py-2 rounded">Refresh Halaman</button>
-                        </div>
+                <div className="min-h-screen flex items-center justify-center bg-gray-50 text-center p-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-400 mb-2">Memuat...</h1>
+                        <p className="text-sm text-gray-400 mb-4">Jika halaman tidak muncul, klik tombol di bawah.</p>
+                        <button onClick={() => window.location.reload()} className="bg-indigo-600 text-white px-4 py-2 rounded">Refresh Halaman</button>
                     </div>
-                </>
+                </div>
             );
         };
 
