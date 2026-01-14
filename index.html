@@ -571,12 +571,18 @@
                 const p = participants.find(item => item.id === qrId);
                 const fallbackP = !p ? { id: qrId, nama: 'Unknown / User', kategori: 'Manual Scan', kelas: '-' } : p;
                 
-                if (!p) { setScanResult({ success: false, msg: 'QR Tidak Terdaftar di Database Peserta!' }); }
+                if (!p) { 
+                    // JANGAN TAMPILKAN NOTIFIKASI JIKA TIDAK TERDAFTAR
+                    setScanResult({ success: false, msg: 'QR Tidak Terdaftar di Database Peserta!' }); 
+                    playErrorSound(); // Opsional: tetap bunyikan error sound agar petugas tahu scan gagal
+                    return; // Stop eksekusi agar tidak lanjut absen
+                }
                 
                 const exist = attendance.find(item => item.id === qrId);
                 if (exist) { 
                     setScanResult({ success: false, msg: 'Sudah Check-in di Sesi Ini', p: fallbackP, time: exist.timestamp }); 
-                    setNotification(`⚠️ ${fallbackP.nama} Sudah Absen!`);
+                    // JANGAN TAMPILKAN NOTIFIKASI JIKA SUDAH ABSEN (sesuai permintaan "sudah absen tidak muncul lagi")
+                    // setNotification(`⚠️ ${fallbackP.nama} Sudah Absen!`); <-- HAPUS INI
                     playErrorSound();
                     return; 
                 }
@@ -585,6 +591,8 @@
                 const newAtt = { ...fallbackP, id: qrId, timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), device: currentUser?.username || 'Unknown', sessionId: selectedSession };
                 saveToCloud(`attendance/${selectedSession}/${qrId}`, newAtt);
                 setScanResult({ success: true, msg: 'Check-in Berhasil!', p: newAtt, time: newAtt.timestamp });
+                
+                // HANYA TAMPILKAN NOTIFIKASI JIKA SUKSES BARU
                 setNotification(`✅ ${newAtt.nama} Berhasil Masuk!`);
                 playFunnySound();
                 setTimeout(() => setNotification(null), 3000);
