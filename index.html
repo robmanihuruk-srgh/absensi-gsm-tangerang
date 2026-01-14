@@ -1,6 +1,4 @@
-<!DOCTYPE html>                                        
-  
-  
+<!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
@@ -91,18 +89,10 @@
             box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1);
         }
         
-        @keyframes shake {
-            0%, 100% { transform: translateX(-50%) rotate(0deg); }
-            25% { transform: translateX(-50%) rotate(-5deg); }
-            75% { transform: translateX(-50%) rotate(5deg); }
-        }
-        .animate-shake {
-            animation: shake 0.5s ease-in-out;
-        }
-        
         /* Timeline styling Updated V3 (Fixed Layout) */
         .timeline-container {
             position: relative;
+            padding-left: 20px;
         }
         /* Garis timeline diposisikan di 80px dari kiri (titik tengah dot) */
         .timeline-line-colorful {
@@ -184,7 +174,6 @@
             const [isInstallModalOpen, setIsInstallModalOpen] = useState(false); 
             const [deleteConfig, setDeleteConfig] = useState({ show: false, path: null });
             const [notification, setNotification] = useState(null); 
-            const [notifiedScheduleIds, setNotifiedScheduleIds] = useState(new Set()); 
             
             const [editingId, setEditingId] = useState(null);
             const [editingMessageId, setEditingMessageId] = useState(null); 
@@ -228,30 +217,27 @@
                 } catch(e) { console.log("Audio play error", e); }
             };
 
-            useEffect(() => {
-                const interval = setInterval(() => {
-                    if (!currentUser || rundown.length === 0) return;
-                    const now = new Date();
-                    const todayStr = now.toLocaleDateString('en-CA'); 
-                    rundown.forEach(r => {
-                        if (r.completed || notifiedScheduleIds.has(r.id)) return;
-                        if (r.date !== todayStr) return;
-                        const [rHour, rMinute] = r.time.split(':').map(Number);
-                        const scheduleTime = new Date();
-                        scheduleTime.setHours(rHour, rMinute, 0);
-                        const diffMs = scheduleTime - now;
-                        const diffMins = Math.floor(diffMs / 60000);
-                        if (diffMins <= 10 && diffMins > -5) {
-                            const pesan = diffMins <= 0 ? `🎉 Sesi "${r.activity}" DIMULAI SEKARANG!` : `⏰ Persiapan! Sesi "${r.activity}" dimulai ${diffMins} menit lagi.`;
-                            setNotification(pesan);
-                            playFunnySound();
-                            setNotifiedScheduleIds(prev => new Set(prev).add(r.id));
-                            setTimeout(() => setNotification(null), 8000);
-                        }
-                    });
-                }, 30000); 
-                return () => clearInterval(interval);
-            }, [rundown, notifiedScheduleIds, currentUser]);
+            const playErrorSound = () => {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContext) return;
+                    const ctx = new AudioContext();
+                    const t = ctx.currentTime;
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, t);
+                    osc.frequency.linearRampToValueAtTime(100, t + 0.3);
+                    gain.gain.setValueAtTime(0.3, t);
+                    gain.gain.linearRampToValueAtTime(0, t + 0.3);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(t);
+                    osc.stop(t + 0.3);
+                } catch(e) { console.log("Audio play error", e); }
+            };
+
+            // --- AUTO NOTIFICATION REMOVED FOR NORMALITY ---
 
             useLayoutEffect(() => {
                 window.scrollTo({ top: 0, behavior: 'instant' });
@@ -289,6 +275,7 @@
                 }
             };
 
+            // --- REALTIME SYNC ENGINE ---
             useEffect(() => {
                 const savedUser = localStorage.getItem('gkps_user');
                 if (savedUser) {
@@ -564,16 +551,32 @@
             const stopScanner = () => { if (scannerRef.current) { try { scannerRef.current.clear(); } catch(e){} scannerRef.current = null; } };
 
             const handleScanSuccess = (qrId) => {
-                if (!selectedSession) { setScanResult({ success: false, msg: 'ERROR: Pilih Sesi Terlebih Dahulu!' }); return; }
+                if (!selectedSession) { 
+                    setScanResult({ success: false, msg: 'ERROR: Pilih Sesi Terlebih Dahulu!' });
+                    setNotification('⚠️ Pilih Sesi dulu ya!');
+                    playErrorSound();
+                    return; 
+                }
                 const p = participants.find(item => item.id === qrId);
                 const fallbackP = !p ? { id: qrId, nama: 'Unknown / User', kategori: 'Manual Scan', kelas: '-' } : p;
+                
                 if (!p) { setScanResult({ success: false, msg: 'QR Tidak Terdaftar di Database Peserta!' }); }
+                
                 const exist = attendance.find(item => item.id === qrId);
-                if (exist) { setScanResult({ success: false, msg: 'Sudah Check-in di Sesi Ini', p: fallbackP, time: exist.timestamp }); return; }
+                if (exist) { 
+                    setScanResult({ success: false, msg: 'Sudah Check-in di Sesi Ini', p: fallbackP, time: exist.timestamp }); 
+                    setNotification(`⚠️ ${fallbackP.nama} Sudah Absen!`);
+                    playErrorSound();
+                    return; 
+                }
+                
                 const now = new Date();
                 const newAtt = { ...fallbackP, id: qrId, timestamp: now.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), device: currentUser?.username || 'Unknown', sessionId: selectedSession };
                 saveToCloud(`attendance/${selectedSession}/${qrId}`, newAtt);
                 setScanResult({ success: true, msg: 'Check-in Berhasil!', p: newAtt, time: newAtt.timestamp });
+                setNotification(`✅ ${newAtt.nama} Berhasil Masuk!`);
+                playFunnySound();
+                setTimeout(() => setNotification(null), 3000);
             };
 
             // --- MENU UTAMA ---
@@ -794,4 +797,3 @@
     </script>
 </body>
 </html>
-
