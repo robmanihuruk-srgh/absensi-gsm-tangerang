@@ -179,6 +179,33 @@
     <script type="text/babel">
         const { useState, useEffect, useLayoutEffect, useRef } = React;
 
+        // --- KOMPONEN EKSTERNAL ---
+        const AdminResetModal = ({ config, setConfig, onConfirm }) => {
+            React.useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
+            }, [config.show]);
+
+            if (!config.show) return null;
+
+            return (
+                <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-bounce-in">
+                    <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center border-4 border-orange-100">
+                        <button onClick={() => setConfig({ ...config, show: false })} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" width="24"></i></button>
+                        <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-orange-50">
+                            <i data-lucide="key-round" className="text-orange-500 w-8 h-8"></i>
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-1 font-fredoka">Reset Password</h3>
+                        <p className="text-sm text-slate-500 mb-6">User: <b>{config.user?.username}</b></p>
+                        
+                        <input type="text" placeholder="Masukkan Password Baru..." className="w-full p-4 border-2 border-slate-200 rounded-xl mb-4 focus:outline-none focus:border-orange-400 bg-slate-50 font-bold text-slate-700 text-center" 
+                            value={config.newPass} onChange={e => setConfig({...config, newPass: e.target.value})} autoFocus />
+                            
+                        <button onClick={onConfirm} className="w-full btn-playful btn-orange py-3 rounded-xl font-black text-lg shadow-lg">Simpan Password</button>
+                    </div>
+                </div>
+            );
+        };
+
         const CloudAttendance = () => {
             const [view, setViewRaw] = useState('login'); 
             const [currentUser, setCurrentUser] = useState(null); 
@@ -380,10 +407,13 @@
                         setThemeData(snapshot.val());
                     });
 
-                    // Listener ACTIVE Broadcast (Instant)
+                    // --- BROADCAST LISTENER (REACTIVATED & FILTERED) ---
                     window.dbOnValue(window.dbRef(window.db, 'announcements/active'), (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
+                            // Filter "Quizz" agar tidak muncul
+                            if (data.title && data.title.toLowerCase().includes('quizz')) return;
+
                             setActiveBroadcast(data);
                             const lastSeenId = localStorage.getItem('last_broadcast_id');
                             if (lastSeenId !== data.id) {
@@ -434,14 +464,16 @@
                 return () => clearTimeout(initSync);
             }, []);
 
-            // --- SCHEDULE CHECKER LOGIC ---
-            // Cek setiap 10 detik apakah ada jadwal yang sudah masuk waktunya
+            // --- SCHEDULE CHECKER LOGIC (REACTIVATED & FILTERED) ---
             useEffect(() => {
                 const checker = setInterval(() => {
                     if (scheduledBroadcasts.length === 0) return;
                     
                     const now = new Date();
                     scheduledBroadcasts.forEach(broadcast => {
+                        // Filter "Quizz" dari penjadwalan juga
+                        if (broadcast.title && broadcast.title.toLowerCase().includes('quizz')) return;
+
                         if (broadcast.schedule) {
                             const scheduleTime = new Date(broadcast.schedule);
                             if (now >= scheduleTime) {
@@ -742,24 +774,6 @@
                 </div>
             );
             
-            const AdminResetModal = () => (
-                <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-bounce-in">
-                    <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center border-4 border-orange-100">
-                        <button onClick={() => setAdminResetConfig({ show: false, user: null, newPass: '' })} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" width="24"></i></button>
-                        <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-orange-50">
-                            <i data-lucide="key-round" className="text-orange-500 w-8 h-8"></i>
-                        </div>
-                        <h3 className="text-xl font-black text-slate-800 mb-1 font-fredoka">Reset Password</h3>
-                        <p className="text-sm text-slate-500 mb-6">User: <b>{adminResetConfig.user?.username}</b></p>
-                        
-                        <input type="text" placeholder="Masukkan Password Baru..." className="w-full p-4 border-2 border-slate-200 rounded-xl mb-4 focus:outline-none focus:border-orange-400 bg-slate-50 font-bold text-slate-700 text-center" 
-                            value={adminResetConfig.newPass} onChange={e => setAdminResetConfig({...adminResetConfig, newPass: e.target.value})} />
-                            
-                        <button onClick={performAdminReset} className="w-full btn-playful btn-orange py-3 rounded-xl font-black text-lg shadow-lg">Simpan Password</button>
-                    </div>
-                </div>
-            );
-
             const InstallModal = () => (
                 <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-bounce-in">
                     <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-sm text-center border-4 border-white/50 relative">
@@ -1382,7 +1396,7 @@
                     </div>
                      {isLogoutModalOpen && <LogoutModal />}
                     {isInstallModalOpen && <InstallModal />}
-                    {adminResetConfig.show && <AdminResetModal />}
+                    {adminResetConfig.show && <AdminResetModal config={adminResetConfig} setConfig={setAdminResetConfig} onConfirm={performAdminReset} />}
                     
                     {/* BROADCAST POPUP UNTUK SEMUA USER */}
                     <BroadcastPopup />
@@ -1432,7 +1446,7 @@
                         </div>
                     </div>
                     {deleteConfig.show && <DeleteConfirmModal />}
-                    {adminResetConfig.show && <AdminResetModal />}
+                    {adminResetConfig.show && <AdminResetModal config={adminResetConfig} setConfig={setAdminResetConfig} onConfirm={performAdminReset} />}
                 </div>
             );
             
