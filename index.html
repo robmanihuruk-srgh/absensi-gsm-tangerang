@@ -209,10 +209,14 @@
             
             // --- STATE BROADCAST (NOTIFIKASI) ---
             const [activeBroadcast, setActiveBroadcast] = useState(null);
+            const [scheduledBroadcasts, setScheduledBroadcasts] = useState([]); // Daftar notifikasi terjadwal
             const [showBroadcastModal, setShowBroadcastModal] = useState(false);
-            const [broadcastForm, setBroadcastForm] = useState({ title: '', message: '', type: 'info' });
+            const [broadcastForm, setBroadcastForm] = useState({ title: '', message: '', type: 'info', schedule: '' });
             
-            // --- NEW: STATE CATATAN (NOTES) ---
+            // --- NEW: STATE TEMA & CATATAN ---
+            const [themeData, setThemeData] = useState(null); 
+            const [editThemeForm, setEditThemeForm] = useState({ title: '', verseRef: '', verseText: '' });
+            
             const [myNotes, setMyNotes] = useState([]);
             const [noteForm, setNoteForm] = useState({ id: '', title: '', content: '' });
             
@@ -230,6 +234,13 @@
 
             const classList = ["Daud", "Daniel", "Paulus", "Ester", "Pos PI Timotius", "Pos PI Abaraham", "PAGI", "UMUM"];
             const scannerRef = useRef(null);
+            
+            // Default Theme Data
+            const defaultTheme = {
+                title: "Terpanggil dan siap melayani Tuhan lewat anak-anak",
+                verseRef: "Matius 19:14",
+                verseText: "Biarkanlah anak-anak itu datang kepada-Ku dan jangan menghalang-halangi mereka, sebab orang-orang yang seperti itulah yang empunya Kerajaan Sorga."
+            };
             
             // --- PALET WARNA UNTUK JADWAL ---
             const rundownColors = [
@@ -312,7 +323,12 @@
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
-                setNoteForm({ id: '', title: '', content: '' }); // Reset note form
+                
+                // --- PERBAIKAN BUG CATATAN DI SINI ---
+                if (newView !== 'note_editor') {
+                    setNoteForm({ id: '', title: '', content: '' }); 
+                }
+                
                 setSelfPassword('');
                 setMessageInput('');
                 setResetForm({ username: '', newPassword: '', token: '' }); 
@@ -358,18 +374,29 @@
                         if (!data) { saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' }); } 
                         else { setUsers(Object.values(data)); }
                     });
-                    // Listener Announcements (Notifikasi)
+                    
+                    // Listener Theme
+                    window.dbOnValue(window.dbRef(window.db, 'theme/current'), (snapshot) => {
+                        setThemeData(snapshot.val());
+                    });
+
+                    // Listener ACTIVE Broadcast (Instant)
                     window.dbOnValue(window.dbRef(window.db, 'announcements/active'), (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
                             setActiveBroadcast(data);
-                            // Cek apakah user sudah melihat notifikasi ini
                             const lastSeenId = localStorage.getItem('last_broadcast_id');
                             if (lastSeenId !== data.id) {
                                 setShowBroadcastModal(true);
                                 playNotificationSound();
                             }
                         }
+                    });
+
+                    // Listener SCHEDULED Broadcast
+                    window.dbOnValue(window.dbRef(window.db, 'announcements/scheduled'), (snapshot) => {
+                        const data = snapshot.val();
+                        setScheduledBroadcasts(data ? Object.values(data) : []);
                     });
 
                     window.dbOnValue(window.dbRef(window.db, 'sessions'), (snapshot) => {
@@ -407,14 +434,46 @@
                 return () => clearTimeout(initSync);
             }, []);
 
+            // --- SCHEDULE CHECKER LOGIC ---
+            // Cek setiap 10 detik apakah ada jadwal yang sudah masuk waktunya
+            useEffect(() => {
+                const checker = setInterval(() => {
+                    if (scheduledBroadcasts.length === 0) return;
+                    
+                    const now = new Date();
+                    scheduledBroadcasts.forEach(broadcast => {
+                        if (broadcast.schedule) {
+                            const scheduleTime = new Date(broadcast.schedule);
+                            if (now >= scheduleTime) {
+                                // Cek unik ID untuk jadwal ini agar tidak muncul terus menerus di sesi ini
+                                const key = `seen_broadcast_${broadcast.id}`;
+                                const seen = localStorage.getItem(key);
+                                
+                                if (!seen) {
+                                    // Tampilkan sebagai active broadcast secara lokal
+                                    setActiveBroadcast(broadcast);
+                                    setShowBroadcastModal(true);
+                                    playNotificationSound();
+                                    
+                                    // Tandai sudah dilihat
+                                    localStorage.setItem(key, 'true');
+                                    // Update juga global last seen ID agar tidak konflik dengan instant broadcast
+                                    localStorage.setItem('last_broadcast_id', broadcast.id);
+                                }
+                            }
+                        }
+                    });
+                }, 10000); // Cek setiap 10 detik
+
+                return () => clearInterval(checker);
+            }, [scheduledBroadcasts]);
+
             // --- NOTES SYNC ENGINE (PRIVATE) ---
             useEffect(() => {
                 if (!currentUser || !window.db) return;
-                // Listener khusus untuk catatan milik user yang sedang login
                 const notesRef = window.dbRef(window.db, `notes/${currentUser.username}`);
                 const unsub = window.dbOnValue(notesRef, (snapshot) => {
                     const data = snapshot.val();
-                    // Convert object to array dan reverse agar catatan baru di atas
                     setMyNotes(data ? Object.values(data).reverse() : []);
                 });
                 return () => unsub();
@@ -430,7 +489,7 @@
 
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 100);
-            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages, editingMessageId, isLogoutModalOpen, isInstallModalOpen, deleteConfig, notification, isDownloading, adminResetConfig, showBroadcastModal, myNotes]);
+            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages, editingMessageId, isLogoutModalOpen, isInstallModalOpen, deleteConfig, notification, isDownloading, adminResetConfig, showBroadcastModal, myNotes, themeData, scheduledBroadcasts]);
 
             const saveToCloud = (path, data) => {
                 if (!window.db) return alert("Belum terkoneksi internet/database!");
@@ -532,7 +591,7 @@
                 alert(`Password untuk ${user.username} berhasil direset!`);
             };
 
-            // --- FUNCTION BROADCAST ---
+            // --- FUNCTION BROADCAST (UPDATED) ---
             const handleSendBroadcast = () => {
                 if(!broadcastForm.title || !broadcastForm.message) return alert("Isi judul dan pesan!");
                 
@@ -541,15 +600,24 @@
                     id,
                     title: broadcastForm.title,
                     message: broadcastForm.message,
+                    schedule: broadcastForm.schedule || null, // Tambahkan jadwal ke notifikasi
                     sender: currentUser.nama,
                     timestamp: new Date().toLocaleString('id-ID'),
                     type: broadcastForm.type
                 };
                 
-                saveToCloud('announcements/active', data);
-                alert("Notifikasi dikirim ke semua pengguna!");
-                setBroadcastForm({ title: '', message: '', type: 'info' });
-                handleBackToMenu();
+                if (broadcastForm.schedule) {
+                    // Simpan ke antrian jadwal
+                    saveToCloud(`announcements/scheduled/${id}`, data);
+                    alert("Notifikasi berhasil dijadwalkan!");
+                } else {
+                    // Kirim langsung (Instant)
+                    saveToCloud('announcements/active', data);
+                    alert("Notifikasi dikirim SEKARANG ke semua pengguna!");
+                }
+                
+                setBroadcastForm({ title: '', message: '', type: 'info', schedule: '' });
+                // Tidak perlu kembali ke menu agar bisa melihat list di bawah
             };
 
             const handleCloseBroadcast = () => {
@@ -557,6 +625,15 @@
                 if (activeBroadcast) {
                     localStorage.setItem('last_broadcast_id', activeBroadcast.id);
                 }
+            };
+            
+            // --- FUNCTION THEME (TEMA) ---
+            const handleSaveTheme = () => {
+                if(!editThemeForm.title || !editThemeForm.verseRef || !editThemeForm.verseText) return alert("Mohon lengkapi semua field tema!");
+                
+                saveToCloud('theme/current', editThemeForm);
+                alert("Tema berhasil diupdate!");
+                handleBackToMenu();
             };
             
             // --- FUNCTION NOTES (CATATAN) ---
@@ -571,7 +648,6 @@
                     timestamp: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
                 };
                 
-                // Simpan ke path spesifik user agar private
                 saveToCloud(`notes/${currentUser.username}/${id}`, noteData);
                 
                 alert(noteForm.id ? "Catatan diperbarui!" : "Catatan tersimpan!");
@@ -626,6 +702,14 @@
                                 </h3>
                                 
                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6 text-left">
+                                    {/* Menampilkan Jadwal Jika Ada */}
+                                    {activeBroadcast.schedule && (
+                                        <div className="bg-indigo-50 text-indigo-700 p-3 rounded-lg mb-4 text-xs font-bold flex items-center gap-2 border border-indigo-100">
+                                            <i data-lucide="calendar-clock" width="16"></i>
+                                            <span>Jadwal: {new Date(activeBroadcast.schedule).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })} WIB</span>
+                                        </div>
+                                    )}
+
                                     <p className="text-slate-700 font-medium leading-relaxed whitespace-pre-wrap">{activeBroadcast.message}</p>
                                     <div className="mt-3 pt-3 border-t border-slate-200 flex justify-between items-center text-xs text-slate-400 font-bold uppercase">
                                         <span><i data-lucide="user" width="12" className="inline mr-1"/>{activeBroadcast.sender}</span>
@@ -909,19 +993,92 @@
                                     <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Judul</label>
                                     <input placeholder="Contoh: Kumpul Sekarang!" className="w-full border-2 p-3 rounded-xl font-bold text-slate-600 focus:border-cyan-400 outline-none bg-slate-50" value={broadcastForm.title} onChange={e => setBroadcastForm({...broadcastForm, title: e.target.value})} />
                                 </div>
+                                
+                                {/* INPUT JADWAL BARU */}
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Jadwal Tayang (Opsional)</label>
+                                    <input type="datetime-local" className="w-full border-2 p-3 rounded-xl font-bold text-slate-600 focus:border-cyan-400 outline-none bg-slate-50" value={broadcastForm.schedule} onChange={e => setBroadcastForm({...broadcastForm, schedule: e.target.value})} />
+                                    <p className="text-[10px] text-slate-400 mt-1 italic">*Jika diisi, notifikasi akan otomatis muncul pada jam tersebut. Jika kosong, notifikasi dikirim sekarang.</p>
+                                </div>
+
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Isi Pesan</label>
                                     <textarea placeholder="Tulis pesan lengkap di sini..." className="w-full border-2 p-3 rounded-xl font-medium text-slate-600 focus:border-cyan-400 outline-none bg-slate-50 h-32 resize-none" value={broadcastForm.message} onChange={e => setBroadcastForm({...broadcastForm, message: e.target.value})}></textarea>
                                 </div>
                                 
                                 <button onClick={handleSendBroadcast} className="w-full btn-playful btn-blue py-3 rounded-xl font-black text-lg shadow-lg mt-2">
-                                    KIRIM NOTIFIKASI
+                                    {broadcastForm.schedule ? 'JADWALKAN NOTIFIKASI' : 'KIRIM SEKARANG'}
                                 </button>
                             </div>
                         </div>
+
+                        {/* LIST JADWAL */}
+                        {scheduledBroadcasts.length > 0 && (
+                            <div className="space-y-3 pb-10">
+                                <h3 className="font-black text-slate-400 ml-2 text-xs uppercase tracking-widest">Antrian Jadwal Broadcast</h3>
+                                {scheduledBroadcasts.map(b => (
+                                    <div key={b.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <h4 className="font-bold text-slate-700 text-sm">{b.title}</h4>
+                                            <button onClick={() => initiateDelete(`announcements/scheduled/${b.id}`)} className="text-rose-500 bg-rose-50 p-1.5 rounded-lg hover:bg-rose-100">
+                                                <i data-lucide="trash-2" width="14"></i>
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mb-2 line-clamp-2">{b.message}</p>
+                                        <div className="bg-indigo-50 text-indigo-600 text-[10px] font-bold px-2 py-1 rounded inline-flex items-center gap-1">
+                                            <i data-lucide="clock" width="10"></i>
+                                            {new Date(b.schedule).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
+                    {deleteConfig.show && <DeleteConfirmModal />}
                  </div>
             );
+            
+            // VIEW: EDIT THEME
+            if (view === 'edit_theme') {
+                const currentTheme = themeData || defaultTheme;
+                // Pre-fill form if empty
+                if (!editThemeForm.title && !editThemeForm.verseRef) {
+                    setEditThemeForm(currentTheme);
+                }
+                
+                return (
+                    <div className="min-h-screen bg-slate-50 p-4">
+                        <div className="max-w-md mx-auto">
+                            <button onClick={handleBackToMenu} className="mb-4 btn-playful btn-white px-4 py-2 rounded-xl w-fit flex gap-2 font-bold"><i data-lucide="arrow-left"></i> Kembali</button>
+                            
+                            <div className="bg-white rounded-3xl shadow-lg p-6 mb-8 border-2 border-slate-100">
+                                <h2 className="font-black text-xl mb-4 flex gap-2 items-center text-slate-700">
+                                    <span className="bg-orange-100 text-orange-500 p-2 rounded-lg"><i data-lucide="book-heart"></i></span> Edit Tema Retreat
+                                </h2>
+                                
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Judul Tema</label>
+                                        <textarea className="w-full border-2 p-3 rounded-xl font-bold text-slate-700 focus:border-orange-400 outline-none bg-slate-50 h-24 resize-none" value={editThemeForm.title} onChange={e => setEditThemeForm({...editThemeForm, title: e.target.value})}></textarea>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Referensi Ayat</label>
+                                        <input className="w-full border-2 p-3 rounded-xl font-bold text-slate-700 focus:border-orange-400 outline-none bg-slate-50" value={editThemeForm.verseRef} onChange={e => setEditThemeForm({...editThemeForm, verseRef: e.target.value})} placeholder="Contoh: Matius 19:14" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Isi Ayat</label>
+                                        <textarea className="w-full border-2 p-3 rounded-xl font-medium text-slate-600 focus:border-orange-400 outline-none bg-slate-50 h-32 resize-none" value={editThemeForm.verseText} onChange={e => setEditThemeForm({...editThemeForm, verseText: e.target.value})}></textarea>
+                                    </div>
+                                    
+                                    <button onClick={handleSaveTheme} className="w-full btn-playful btn-orange py-3 rounded-xl font-black text-lg shadow-lg mt-2">
+                                        SIMPAN TEMA
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
             
             // VIEW: NOTES LIST
             if (view === 'notes_list') return (
@@ -1121,7 +1278,9 @@
                 </div>
             );
 
-            if (view === 'menu') return (
+            if (view === 'menu') {
+                const currentTheme = themeData || defaultTheme;
+                return (
                 <div key="view-menu" className="min-h-screen bg-school-sunday p-4 pt-8 pb-20 relative">
                      {notification && (
                         <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-[150] w-full max-w-sm px-4 animate-shake">
@@ -1139,6 +1298,37 @@
                                 <button onClick={handleLogoutClick} className="bg-white/20 hover:bg-white/30 p-3 rounded-2xl text-white transition flex items-center justify-center shadow-inner border border-white/30" title="Keluar"><i data-lucide="log-out" width="20"></i></button>
                             </div>
                         </div>
+                        
+                        {/* --- KARTU TEMA BARU --- */}
+                        <div className="p-6 pb-0">
+                            <div className="bg-white p-6 rounded-[32px] shadow-lg border-4 border-orange-100 relative overflow-hidden group">
+                                {/* Decorative background elements */}
+                                <div className="absolute top-0 right-0 p-4 opacity-10 text-orange-500"><i data-lucide="book-heart" width="80" height="80"></i></div>
+                                
+                                <div className="relative z-10">
+                                    <h2 className="text-sm font-black text-orange-400 uppercase tracking-widest mb-2">Tema Retreat</h2>
+                                    <h3 className="text-xl font-black text-slate-800 font-fredoka leading-tight mb-4">
+                                        "{currentTheme.title}"
+                                    </h3>
+                                    
+                                    <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                                        <p className="text-slate-600 italic font-medium text-sm leading-relaxed mb-2">
+                                            "{currentTheme.verseText}"
+                                        </p>
+                                        <p className="text-xs font-black text-orange-500 text-right uppercase tracking-wider">
+                                            — {currentTheme.verseRef}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {(isAdmin || isPanitia) && (
+                                    <button onClick={() => setView('edit_theme')} className="absolute top-4 right-4 bg-white/80 p-2 rounded-full text-slate-400 hover:text-orange-500 shadow-sm border border-slate-100 transition">
+                                        <i data-lucide="pencil" width="16"></i>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
                         <div className="p-6 space-y-4">
                             <button onClick={() => setView('my_barcode')} className="w-full btn-playful bg-gradient-to-r from-sky-400 to-blue-500 border-b-4 border-blue-700 text-white p-4 rounded-2xl flex items-center gap-4 shadow-lg hover:shadow-sky-200 transform hover:scale-[1.01]">
                                 <div className="bg-white/20 p-3 rounded-xl border-2 border-white/30"><i data-lucide="qr-code" width="28" height="28"></i></div>
@@ -1198,6 +1388,7 @@
                     <BroadcastPopup />
                 </div>
             );
+            }
 
             // ... (Rest of views truncated for brevity as they use standard structure)
             if (view === 'my_barcode') { 
