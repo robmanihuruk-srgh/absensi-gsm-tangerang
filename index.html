@@ -103,14 +103,12 @@
             position: relative;
             padding-left: 20px;
         }
-        /* Garis timeline diposisikan di 80px dari kiri (titik tengah dot) */
         .timeline-line-colorful {
             position: absolute;
             left: 80px; 
             top: 20px;
             bottom: 0;
             width: 4px;
-            /* Pola garis putus-putus warna-warni */
             background: repeating-linear-gradient(
                 to bottom,
                 #FF9A9E,
@@ -124,6 +122,25 @@
             );
             z-index: 0;
             border-radius: 99px;
+        }
+        /* Custom Bell Animation */
+        @keyframes ring {
+            0% { transform: rotate(0); }
+            10% { transform: rotate(30deg); }
+            30% { transform: rotate(-28deg); }
+            50% { transform: rotate(34deg); }
+            70% { transform: rotate(-32deg); }
+            90% { transform: rotate(30deg); }
+            100% { transform: rotate(0); }
+        }
+        .bell-ring { animation: ring 4s ease-in-out infinite; transform-origin: 50% 0%; }
+        
+        /* Notebook Paper Effect */
+        .notebook-paper {
+            background-color: #fff;
+            background-image: linear-gradient(#f4f4f4 1px, transparent 1px);
+            background-size: 100% 2em;
+            line-height: 2em;
         }
     </style>
 
@@ -190,6 +207,15 @@
             
             const [notification, setNotification] = useState(null); 
             
+            // --- STATE BROADCAST (NOTIFIKASI) ---
+            const [activeBroadcast, setActiveBroadcast] = useState(null);
+            const [showBroadcastModal, setShowBroadcastModal] = useState(false);
+            const [broadcastForm, setBroadcastForm] = useState({ title: '', message: '', type: 'info' });
+            
+            // --- NEW: STATE CATATAN (NOTES) ---
+            const [myNotes, setMyNotes] = useState([]);
+            const [noteForm, setNoteForm] = useState({ id: '', title: '', content: '' });
+            
             const [editingId, setEditingId] = useState(null);
             const [editingMessageId, setEditingMessageId] = useState(null); 
             
@@ -255,7 +281,25 @@
                 } catch(e) { console.log("Audio play error", e); }
             };
 
-            // --- AUTO NOTIFICATION REMOVED ---
+            const playNotificationSound = () => {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContext) return;
+                    const ctx = new AudioContext();
+                    const t = ctx.currentTime;
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(500, t);
+                    osc.frequency.exponentialRampToValueAtTime(1000, t + 0.1);
+                    gain.gain.setValueAtTime(0.3, t);
+                    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(t);
+                    osc.stop(t + 0.5);
+                } catch(e) {}
+            };
 
             useLayoutEffect(() => {
                 window.scrollTo({ top: 0, behavior: 'instant' });
@@ -268,9 +312,10 @@
                 setSessionForm({ title: '', date: '', time: '' });
                 setRundownForm({ date: '', time: '', activity: '' });
                 setFormData({ nama: '', kategori: 'Anak Sekolah Minggu', kelas: '' });
+                setNoteForm({ id: '', title: '', content: '' }); // Reset note form
                 setSelfPassword('');
                 setMessageInput('');
-                setResetForm({ username: '', newPassword: '', token: '' }); // Reset form lupa password
+                setResetForm({ username: '', newPassword: '', token: '' }); 
                 setIsLogoutModalOpen(false); 
                 setIsInstallModalOpen(false);
                 setDeleteConfig({ show: false, path: null });
@@ -313,6 +358,20 @@
                         if (!data) { saveToCloud('users/admin', { username: 'admin', password: 'admin123', role: 'admin', nama: 'Super Admin' }); } 
                         else { setUsers(Object.values(data)); }
                     });
+                    // Listener Announcements (Notifikasi)
+                    window.dbOnValue(window.dbRef(window.db, 'announcements/active'), (snapshot) => {
+                        const data = snapshot.val();
+                        if (data) {
+                            setActiveBroadcast(data);
+                            // Cek apakah user sudah melihat notifikasi ini
+                            const lastSeenId = localStorage.getItem('last_broadcast_id');
+                            if (lastSeenId !== data.id) {
+                                setShowBroadcastModal(true);
+                                playNotificationSound();
+                            }
+                        }
+                    });
+
                     window.dbOnValue(window.dbRef(window.db, 'sessions'), (snapshot) => {
                         const data = snapshot.val();
                         if (data) {
@@ -348,6 +407,19 @@
                 return () => clearTimeout(initSync);
             }, []);
 
+            // --- NOTES SYNC ENGINE (PRIVATE) ---
+            useEffect(() => {
+                if (!currentUser || !window.db) return;
+                // Listener khusus untuk catatan milik user yang sedang login
+                const notesRef = window.dbRef(window.db, `notes/${currentUser.username}`);
+                const unsub = window.dbOnValue(notesRef, (snapshot) => {
+                    const data = snapshot.val();
+                    // Convert object to array dan reverse agar catatan baru di atas
+                    setMyNotes(data ? Object.values(data).reverse() : []);
+                });
+                return () => unsub();
+            }, [currentUser]);
+
             useEffect(() => {
                 if (!selectedSession || !window.db) return;
                 const unsub = window.dbOnValue(window.dbRef(window.db, `attendance/${selectedSession}`), (snapshot) => {
@@ -358,7 +430,7 @@
 
             useEffect(() => { 
                 setTimeout(() => { try { lucide.createIcons(); } catch(e){} }, 100);
-            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages, editingMessageId, isLogoutModalOpen, isInstallModalOpen, deleteConfig, notification, isDownloading, adminResetConfig]);
+            }, [view, scanResult, participants, users, sessions, rundown, editingId, messages, editingMessageId, isLogoutModalOpen, isInstallModalOpen, deleteConfig, notification, isDownloading, adminResetConfig, showBroadcastModal, myNotes]);
 
             const saveToCloud = (path, data) => {
                 if (!window.db) return alert("Belum terkoneksi internet/database!");
@@ -414,17 +486,14 @@
                 setView('login');
             };
 
-            // --- FITUR RESET PASSWORD (LOGIN SCREEN - ONLY FOR ADMIN) ---
             const handleResetPassword = () => {
                 const { username, newPassword, token } = resetForm;
                 if (!username || !newPassword || !token) return alert("Mohon lengkapi semua kolom!");
 
-                // Validasi: Fitur ini hanya untuk 'admin'
                 if (username !== 'admin') {
                     return alert("Fitur reset mandiri hanya untuk Akun Admin Utama.\n\nJika Anda Peserta/Panitia dan lupa password, silakan hubungi Admin untuk di-reset dari Menu Admin.");
                 }
 
-                // Kode Otorisasi "Master Key"
                 const MASTER_TOKEN = "GKPS-2025"; 
 
                 if (token !== MASTER_TOKEN) {
@@ -436,7 +505,6 @@
                     return alert("Username admin tidak ditemukan!");
                 }
 
-                // Update password
                 const updatedUser = { ...userExists, password: newPassword };
                 saveToCloud(`users/${username}`, updatedUser);
                 
@@ -444,7 +512,6 @@
                 setView('login');
             };
             
-            // --- FITUR RESET PASSWORD OLEH ADMIN (DI DALAM MENU) ---
             const initiateAdminReset = (user) => {
                 setAdminResetConfig({ show: true, user: user, newPass: '' });
             };
@@ -456,7 +523,6 @@
                 const updatedUser = { ...user, password: newPass };
                 saveToCloud(`users/${user.username}`, updatedUser);
                 
-                // Jika mereset diri sendiri, update state
                 if(currentUser && currentUser.username === user.username) {
                     setCurrentUser(updatedUser);
                     localStorage.setItem('gkps_user', JSON.stringify(updatedUser));
@@ -465,6 +531,64 @@
                 setAdminResetConfig({ show: false, user: null, newPass: '' });
                 alert(`Password untuk ${user.username} berhasil direset!`);
             };
+
+            // --- FUNCTION BROADCAST ---
+            const handleSendBroadcast = () => {
+                if(!broadcastForm.title || !broadcastForm.message) return alert("Isi judul dan pesan!");
+                
+                const id = `NOTIF-${Date.now()}`;
+                const data = {
+                    id,
+                    title: broadcastForm.title,
+                    message: broadcastForm.message,
+                    sender: currentUser.nama,
+                    timestamp: new Date().toLocaleString('id-ID'),
+                    type: broadcastForm.type
+                };
+                
+                saveToCloud('announcements/active', data);
+                alert("Notifikasi dikirim ke semua pengguna!");
+                setBroadcastForm({ title: '', message: '', type: 'info' });
+                handleBackToMenu();
+            };
+
+            const handleCloseBroadcast = () => {
+                setShowBroadcastModal(false);
+                if (activeBroadcast) {
+                    localStorage.setItem('last_broadcast_id', activeBroadcast.id);
+                }
+            };
+            
+            // --- FUNCTION NOTES (CATATAN) ---
+            const handleSaveNote = () => {
+                if (!noteForm.title || !noteForm.content) return alert("Judul dan Isi Catatan tidak boleh kosong!");
+                
+                const id = noteForm.id || `NOTE-${Date.now()}`;
+                const noteData = {
+                    id,
+                    title: noteForm.title,
+                    content: noteForm.content,
+                    timestamp: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
+                };
+                
+                // Simpan ke path spesifik user agar private
+                saveToCloud(`notes/${currentUser.username}/${id}`, noteData);
+                
+                alert(noteForm.id ? "Catatan diperbarui!" : "Catatan tersimpan!");
+                setView('notes_list');
+            };
+            
+            const openEditNote = (note) => {
+                setNoteForm(note);
+                setView('note_editor');
+            };
+            
+            const openNewNote = () => {
+                setNoteForm({ id: '', title: '', content: '' });
+                setView('note_editor');
+            };
+
+            // --- MODALS COMPONENTS ---
 
             const LogoutModal = () => (
                 <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm animate-bounce-in">
@@ -479,6 +603,44 @@
                     </div>
                 </div>
             );
+
+            const BroadcastPopup = () => {
+                if (!activeBroadcast || !showBroadcastModal) return null;
+                const isUrgent = activeBroadcast.type === 'urgent';
+                
+                return (
+                    <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm animate-bounce-in">
+                        <div className={`bg-white rounded-3xl shadow-2xl w-full max-w-sm text-center border-4 relative overflow-hidden ${isUrgent ? 'border-red-400' : 'border-sky-400'}`}>
+                            {/* Header Pattern */}
+                            <div className={`h-20 w-full absolute top-0 left-0 ${isUrgent ? 'bg-red-100' : 'bg-sky-100'}`}></div>
+                            
+                            <div className="relative z-10 p-6 pt-0">
+                                <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 bg-white mt-8 ${isUrgent ? 'border-red-100' : 'border-sky-100'}`}>
+                                    <div className="bell-ring">
+                                        <i data-lucide={isUrgent ? "alert-triangle" : "megaphone"} className={`w-10 h-10 ${isUrgent ? 'text-red-500' : 'text-sky-500'}`}></i>
+                                    </div>
+                                </div>
+                                
+                                <h3 className={`text-2xl font-black mb-2 font-fredoka leading-tight ${isUrgent ? 'text-red-600' : 'text-sky-600'}`}>
+                                    {activeBroadcast.title}
+                                </h3>
+                                
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-6 text-left">
+                                    <p className="text-slate-700 font-medium leading-relaxed whitespace-pre-wrap">{activeBroadcast.message}</p>
+                                    <div className="mt-3 pt-3 border-t border-slate-200 flex justify-between items-center text-xs text-slate-400 font-bold uppercase">
+                                        <span><i data-lucide="user" width="12" className="inline mr-1"/>{activeBroadcast.sender}</span>
+                                        <span>{activeBroadcast.timestamp.split(' ')[1]}</span>
+                                    </div>
+                                </div>
+                                
+                                <button onClick={handleCloseBroadcast} className={`w-full py-3 px-4 rounded-xl font-black text-white transition shadow-lg btn-playful ${isUrgent ? 'bg-red-500 border-red-700 hover:bg-red-600' : 'bg-sky-400 border-sky-600 hover:bg-sky-500'}`}>
+                                    OKE, SIAP!
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
 
             const DeleteConfirmModal = () => (
                 <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 backdrop-blur-sm animate-bounce-in">
@@ -717,6 +879,123 @@
                     </div>
                 </div>
             );
+            
+            // VIEW: MANAGE BROADCAST (New Admin View)
+            if (view === 'manage_broadcast') return (
+                 <div key="view-broadcast" className="min-h-screen bg-slate-50 p-4">
+                    <div className="max-w-md mx-auto">
+                        <button onClick={handleBackToMenu} className="mb-4 btn-playful btn-white px-4 py-2 rounded-xl w-fit flex gap-2 font-bold"><i data-lucide="arrow-left"></i> Kembali</button>
+                        
+                        <div className="bg-white rounded-3xl shadow-lg p-6 mb-8 border-2 border-slate-100 relative overflow-hidden">
+                             <div className="absolute top-0 right-0 p-4 opacity-5"><i data-lucide="megaphone" width="100" height="100"></i></div>
+                            <h2 className="font-black text-lg mb-2 flex gap-2 items-center text-slate-700 relative z-10">
+                                Kirim Pengumuman
+                            </h2>
+                            <p className="text-xs text-slate-500 mb-6 font-medium relative z-10">Pesan akan muncul otomatis (pop-up) di layar semua pengguna yang sedang membuka aplikasi.</p>
+                            
+                            <div className="space-y-4 relative z-10">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Tipe Info</label>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setBroadcastForm({...broadcastForm, type: 'info'})} className={`flex-1 py-2 px-3 rounded-xl border-2 font-bold text-sm flex items-center justify-center gap-2 ${broadcastForm.type === 'info' ? 'bg-sky-100 border-sky-300 text-sky-700' : 'border-slate-100 text-slate-400'}`}>
+                                            <i data-lucide="info" width="16"></i> Info Biasa
+                                        </button>
+                                        <button onClick={() => setBroadcastForm({...broadcastForm, type: 'urgent'})} className={`flex-1 py-2 px-3 rounded-xl border-2 font-bold text-sm flex items-center justify-center gap-2 ${broadcastForm.type === 'urgent' ? 'bg-red-100 border-red-300 text-red-700' : 'border-slate-100 text-slate-400'}`}>
+                                            <i data-lucide="alert-triangle" width="16"></i> Penting!
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Judul</label>
+                                    <input placeholder="Contoh: Kumpul Sekarang!" className="w-full border-2 p-3 rounded-xl font-bold text-slate-600 focus:border-cyan-400 outline-none bg-slate-50" value={broadcastForm.title} onChange={e => setBroadcastForm({...broadcastForm, title: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Isi Pesan</label>
+                                    <textarea placeholder="Tulis pesan lengkap di sini..." className="w-full border-2 p-3 rounded-xl font-medium text-slate-600 focus:border-cyan-400 outline-none bg-slate-50 h-32 resize-none" value={broadcastForm.message} onChange={e => setBroadcastForm({...broadcastForm, message: e.target.value})}></textarea>
+                                </div>
+                                
+                                <button onClick={handleSendBroadcast} className="w-full btn-playful btn-blue py-3 rounded-xl font-black text-lg shadow-lg mt-2">
+                                    KIRIM NOTIFIKASI
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                 </div>
+            );
+            
+            // VIEW: NOTES LIST
+            if (view === 'notes_list') return (
+                <div key="view-notes_list" className="min-h-screen bg-yellow-50 p-4">
+                    <div className="max-w-md mx-auto">
+                        <button onClick={handleBackToMenu} className="mb-4 btn-playful btn-white px-4 py-2 rounded-xl w-fit flex gap-2 font-bold"><i data-lucide="arrow-left"></i> Kembali</button>
+                        
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="font-black text-2xl text-slate-800 font-fredoka flex items-center gap-2">
+                                <span className="bg-yellow-200 p-2 rounded-lg text-yellow-700"><i data-lucide="notebook-pen" width="24"></i></span> Catatan Materi
+                            </h2>
+                            <button onClick={openNewNote} className="btn-playful btn-orange px-4 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-orange-100">
+                                <i data-lucide="plus" width="18"></i> Baru
+                            </button>
+                        </div>
+                        
+                        <div className="grid gap-4">
+                            {myNotes.length === 0 && (
+                                <div className="text-center py-20 opacity-50">
+                                    <i data-lucide="sticky-note" className="mx-auto mb-4 w-20 h-20 text-yellow-300"></i>
+                                    <p className="text-slate-400 font-bold">Belum ada catatan nih.</p>
+                                    <p className="text-xs text-slate-400">Yuk catat materi yang kamu dengar!</p>
+                                </div>
+                            )}
+                            
+                            {myNotes.map(note => (
+                                <div key={note.id} onClick={() => openEditNote(note)} className="bg-white rounded-2xl p-5 shadow-sm border-2 border-yellow-100 hover:border-yellow-300 transition cursor-pointer relative group">
+                                    <div className="absolute top-0 right-0 w-8 h-8 bg-yellow-100 rounded-bl-2xl rounded-tr-xl flex items-center justify-center text-yellow-500">
+                                        <i data-lucide="edit-3" width="14"></i>
+                                    </div>
+                                    <h3 className="font-black text-lg text-slate-800 mb-2 pr-6 line-clamp-1">{note.title}</h3>
+                                    <p className="text-slate-500 text-sm line-clamp-3 mb-4 leading-relaxed font-medium">{note.content}</p>
+                                    <div className="flex justify-between items-center pt-3 border-t border-slate-100">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{note.timestamp}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); deleteFromCloud(`notes/${currentUser.username}/${note.id}`); }} className="text-rose-400 hover:text-rose-600 p-1 bg-rose-50 rounded transition">
+                                            <i data-lucide="trash-2" width="14"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {deleteConfig.show && <DeleteConfirmModal />}
+                </div>
+            );
+            
+            // VIEW: NOTE EDITOR
+            if (view === 'note_editor') return (
+                <div key="view-note_editor" className="min-h-screen bg-white p-0">
+                    <div className="max-w-md mx-auto h-screen flex flex-col">
+                        <div className="p-4 flex justify-between items-center border-b border-slate-100 sticky top-0 bg-white z-10">
+                            <button onClick={() => setView('notes_list')} className="p-2 text-slate-500 hover:text-slate-800"><i data-lucide="arrow-left"></i></button>
+                            <span className="font-black text-slate-700 font-fredoka">{noteForm.id ? 'Edit Catatan' : 'Catatan Baru'}</span>
+                            <button onClick={handleSaveNote} className="btn-playful btn-blue px-4 py-2 rounded-xl font-bold text-sm">Simpan</button>
+                        </div>
+                        
+                        <div className="flex-1 p-6 overflow-y-auto">
+                            <input 
+                                placeholder="Judul Materi / Sesi..." 
+                                className="w-full text-2xl font-black text-slate-800 placeholder-slate-300 border-none outline-none mb-4 bg-transparent font-fredoka"
+                                value={noteForm.title}
+                                onChange={e => setNoteForm({...noteForm, title: e.target.value})}
+                            />
+                            <div className="w-full h-px bg-yellow-200 mb-6"></div>
+                            <textarea 
+                                placeholder="Mulai menulis catatanmu di sini..." 
+                                className="w-full h-[calc(100vh-200px)] resize-none outline-none text-slate-600 leading-8 notebook-paper font-medium text-lg"
+                                value={noteForm.content}
+                                onChange={e => setNoteForm({...noteForm, content: e.target.value})}
+                            ></textarea>
+                        </div>
+                    </div>
+                </div>
+            );
 
             // VIEW: MANAGE RUNDOWN
             if (view === 'manage_rundown') return (
@@ -872,10 +1151,25 @@
                                 <button onClick={() => setView('messages')} className="btn-playful btn-white border-b-4 border-slate-200 p-4 rounded-2xl flex flex-col items-center gap-2 shadow-sm h-full justify-center">
                                     <div className="bg-amber-100 p-3 rounded-full text-amber-500 mb-1"><i data-lucide="message-circle" width="24"></i></div><span className="font-bold text-slate-600 text-sm">Pesan & Kesan</span>
                                 </button>
+                                {/* TOMBOL BARU: CATATAN MATERI */}
+                                <button onClick={() => setView('notes_list')} className="col-span-2 btn-playful bg-yellow-400 text-yellow-900 border-b-4 border-yellow-600 p-4 rounded-2xl flex items-center gap-3 shadow-lg shadow-yellow-100 hover:shadow-yellow-200 justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-white/30 p-2 rounded-xl"><i data-lucide="notebook-pen" width="24"></i></div>
+                                        <div className="text-left"><h3 className="font-black text-lg font-fredoka">Catatan Materi</h3><p className="text-xs font-bold opacity-80">Rangkuman Sesi</p></div>
+                                    </div>
+                                    <i data-lucide="chevron-right" className="opacity-50"></i>
+                                </button>
                             </div>
                              {!isPeserta && (
                                 <div className="bg-slate-50 p-4 rounded-3xl border-2 border-dashed border-slate-200 mt-4">
                                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Menu Panitia</h4>
+                                    
+                                    {/* MENU BROADCAST BARU UNTUK ADMIN/PANITIA */}
+                                    <button onClick={() => setView('manage_broadcast')} className="w-full btn-playful bg-indigo-500 text-white border-b-4 border-indigo-700 p-3 rounded-xl flex items-center gap-3 shadow-lg shadow-indigo-200 mb-3">
+                                        <div className="bg-white/20 p-2 rounded-lg"><i data-lucide="megaphone" width="18"></i></div>
+                                        <div className="text-left text-xs"><h3 className="font-bold text-sm">Broadcast Notifikasi</h3><p className="text-[10px] text-indigo-200 opacity-90">Kirim Info ke Semua Layar</p></div>
+                                    </button>
+
                                     {isAdmin && (
                                         <div className="grid grid-cols-2 gap-3 mb-3">
                                             <button onClick={() => setView('manage_sessions')} className="btn-playful btn-purple rounded-xl p-3 text-xs font-bold flex flex-col items-center gap-2 border-b-4 border-violet-700"><i data-lucide="calendar-clock"></i> Atur Sesi</button>
@@ -899,13 +1193,18 @@
                      {isLogoutModalOpen && <LogoutModal />}
                     {isInstallModalOpen && <InstallModal />}
                     {adminResetConfig.show && <AdminResetModal />}
+                    
+                    {/* BROADCAST POPUP UNTUK SEMUA USER */}
+                    <BroadcastPopup />
                 </div>
             );
 
-            // --- Other views truncated for brevity as they use standard structure ---
-            if (view === 'my_barcode') { /* ...Same as previous... */ 
+            // ... (Rest of views truncated for brevity as they use standard structure)
+            if (view === 'my_barcode') { 
                const myParticipantData = participants.find(p => p.nama.toLowerCase() === currentUser.nama.toLowerCase()) || { id: currentUser.username, nama: currentUser.nama, kategori: currentUser.role, kelas: '-' };
-                return (<div className="min-h-screen bg-school-sunday p-6 flex flex-col items-center justify-center"><div className="w-full max-w-sm"><div className="flex justify-between items-center mb-6"><button onClick={handleBackToMenu} className="btn-playful bg-white text-slate-700 font-bold flex items-center gap-2 py-2 px-4 rounded-xl shadow-sm border-b-4 border-slate-200"><i data-lucide="arrow-left" width="18"></i> Kembali</button><button onClick={handleLogoutClick} className="btn-playful bg-rose-100 text-rose-600 font-bold flex items-center gap-2 py-2 px-4 rounded-xl shadow-sm border-b-4 border-rose-200"><i data-lucide="log-out" width="18"></i></button></div><div className="barcode-card rounded-[32px] shadow-2xl overflow-hidden relative text-white border-[6px] border-white ring-4 ring-orange-200/50"><div className="p-6 text-center border-b border-white/20 relative bg-white/10 backdrop-blur-sm"><h2 className="text-3xl font-black tracking-wide uppercase drop-shadow-md" style={{fontFamily: 'Fredoka, sans-serif'}}>Kartu Peserta</h2><p className="text-sm font-bold opacity-90 tracking-widest bg-black/10 inline-block px-3 rounded-full mt-1">GKPS Tangerang</p></div><div className="bg-white p-8 flex flex-col items-center justify-center gap-6 relative"><div className="bg-white p-4 rounded-3xl border-4 border-dashed border-sky-200 shadow-inner"><img src={generateQRUrl(myParticipantData.id)} alt="My QR" className="w-48 h-48 object-contain mix-blend-multiply" /></div><div className="text-center w-full"><div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 w-full"><p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Nama Lengkap</p><h3 className="text-2xl font-black text-slate-800 leading-tight mb-3 font-fredoka">{myParticipantData.nama}</h3><div className="flex justify-center gap-2 flex-wrap"><span className="bg-sky-100 text-sky-700 text-xs px-3 py-1.5 rounded-lg font-bold uppercase border-b-2 border-sky-200">{myParticipantData.kategori}</span>{myParticipantData.kelas !== '-' && <span className="bg-rose-100 text-rose-700 text-xs px-3 py-1.5 rounded-lg font-bold uppercase border-b-2 border-rose-200">{myParticipantData.kelas}</span>}</div></div></div></div><div className="p-3 bg-indigo-500/90 backdrop-blur-sm text-center border-t border-white/10"><p className="text-[10px] font-bold opacity-90 text-indigo-100">Scan barcode ini saat masuk ruangan</p></div></div><div className="mt-8 text-center"><button onClick={() => downloadSingleQR(myParticipantData)} className="btn-playful btn-green py-3 px-6 rounded-2xl flex items-center justify-center gap-2 mx-auto text-sm font-bold shadow-lg shadow-emerald-200 border-b-4 border-emerald-600"><i data-lucide="download"></i> Simpan ke Galeri</button></div></div>{isLogoutModalOpen && <LogoutModal />}</div>);
+                return (<div className="min-h-screen bg-school-sunday p-6 flex flex-col items-center justify-center">
+                    <BroadcastPopup /> {/* Ensure modal works here too */}
+                    <div className="w-full max-w-sm"><div className="flex justify-between items-center mb-6"><button onClick={handleBackToMenu} className="btn-playful bg-white text-slate-700 font-bold flex items-center gap-2 py-2 px-4 rounded-xl shadow-sm border-b-4 border-slate-200"><i data-lucide="arrow-left" width="18"></i> Kembali</button><button onClick={handleLogoutClick} className="btn-playful bg-rose-100 text-rose-600 font-bold flex items-center gap-2 py-2 px-4 rounded-xl shadow-sm border-b-4 border-rose-200"><i data-lucide="log-out" width="18"></i></button></div><div className="barcode-card rounded-[32px] shadow-2xl overflow-hidden relative text-white border-[6px] border-white ring-4 ring-orange-200/50"><div className="p-6 text-center border-b border-white/20 relative bg-white/10 backdrop-blur-sm"><h2 className="text-3xl font-black tracking-wide uppercase drop-shadow-md" style={{fontFamily: 'Fredoka, sans-serif'}}>Kartu Peserta</h2><p className="text-sm font-bold opacity-90 tracking-widest bg-black/10 inline-block px-3 rounded-full mt-1">GKPS Tangerang</p></div><div className="bg-white p-8 flex flex-col items-center justify-center gap-6 relative"><div className="bg-white p-4 rounded-3xl border-4 border-dashed border-sky-200 shadow-inner"><img src={generateQRUrl(myParticipantData.id)} alt="My QR" className="w-48 h-48 object-contain mix-blend-multiply" /></div><div className="text-center w-full"><div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 w-full"><p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mb-1">Nama Lengkap</p><h3 className="text-2xl font-black text-slate-800 leading-tight mb-3 font-fredoka">{myParticipantData.nama}</h3><div className="flex justify-center gap-2 flex-wrap"><span className="bg-sky-100 text-sky-700 text-xs px-3 py-1.5 rounded-lg font-bold uppercase border-b-2 border-sky-200">{myParticipantData.kategori}</span>{myParticipantData.kelas !== '-' && <span className="bg-rose-100 text-rose-700 text-xs px-3 py-1.5 rounded-lg font-bold uppercase border-b-2 border-rose-200">{myParticipantData.kelas}</span>}</div></div></div></div><div className="p-3 bg-indigo-500/90 backdrop-blur-sm text-center border-t border-white/10"><p className="text-[10px] font-bold opacity-90 text-indigo-100">Scan barcode ini saat masuk ruangan</p></div></div><div className="mt-8 text-center"><button onClick={() => downloadSingleQR(myParticipantData)} className="btn-playful btn-green py-3 px-6 rounded-2xl flex items-center justify-center gap-2 mx-auto text-sm font-bold shadow-lg shadow-emerald-200 border-b-4 border-emerald-600"><i data-lucide="download"></i> Simpan ke Galeri</button></div></div>{isLogoutModalOpen && <LogoutModal />}</div>);
             }
              if (view === 'change_password') return (<div className="min-h-screen bg-slate-50 p-4"><div className="max-w-md mx-auto"><button onClick={handleBackToMenu} className="mb-6 btn-playful bg-white text-slate-600 font-bold px-4 py-2 rounded-xl border-b-4 border-slate-200 flex items-center gap-2 w-fit"><i data-lucide="arrow-left" width="18"></i> Kembali</button><div className="bg-white rounded-3xl shadow-xl p-8 border-2 border-slate-100"><div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4 text-orange-500 mx-auto border-4 border-orange-50"><i data-lucide="lock" width="32" height="32"></i></div><h2 className="font-black text-2xl mb-2 text-slate-800 text-center font-fredoka">Ganti Password</h2><p className="text-sm text-slate-400 mb-6 text-center font-bold">Akun: <span className="text-indigo-500">{currentUser?.username}</span></p><input type="password" placeholder="Ketik Password Baru..." className="w-full p-4 border-2 border-slate-200 rounded-xl mb-4 focus:outline-none focus:border-orange-400 bg-slate-50 font-bold text-slate-700" value={selfPassword} onChange={e => setSelfPassword(e.target.value)} /><button onClick={handleChangeSelfPassword} className="w-full btn-playful btn-orange py-4 rounded-xl font-black text-lg shadow-lg shadow-orange-100 mt-2">Simpan Perubahan</button></div></div></div>);
             if (view === 'messages') return (<div className="min-h-screen bg-yellow-50 p-4"><div className="max-w-md mx-auto"><button onClick={handleBackToMenu} className="mb-6 btn-playful bg-white text-slate-600 font-bold px-4 py-2 rounded-xl border-b-4 border-slate-200 flex items-center gap-2 w-fit"><i data-lucide="arrow-left" width="18"></i> Kembali</button><div className="bg-white rounded-3xl shadow-xl p-6 mb-6 border-2 border-yellow-100"><div className="flex items-center gap-3 mb-4"><div className="p-3 bg-yellow-100 rounded-full text-yellow-600"><i data-lucide="message-circle-heart"></i></div><h2 className="font-black text-xl text-slate-700 font-fredoka">{editingMessageId ? 'Edit Pesan' : 'Kirim Pesan'}</h2></div><textarea placeholder="Tuliskan pengalaman seru atau masukan kakak..." className="w-full border-2 border-slate-200 p-4 rounded-2xl mb-4 h-32 focus:outline-none focus:border-yellow-400 bg-slate-50 font-medium text-slate-700 resize-none" value={messageInput} onChange={e => setMessageInput(e.target.value)}></textarea><div className="flex gap-3"><button onClick={handleSendMessage} className={`flex-1 btn-playful py-3 rounded-xl font-bold transition shadow-md ${editingMessageId ? 'btn-orange' : 'btn-yellow'}`}>{editingMessageId ? 'Update' : 'Kirim Pesan'}</button>{editingMessageId && <button onClick={cancelEditMessage} className="btn-playful btn-white px-6 rounded-xl font-bold">Batal</button>}</div></div><div className="space-y-4 pb-20"><h3 className="font-black text-slate-400 ml-2 text-sm uppercase tracking-widest">Dinding Pesan ({messages.length})</h3>{messages.map(m => (<div key={m.id} className={`bg-white p-5 rounded-3xl shadow-sm border-2 relative ${editingMessageId === m.id ? 'border-orange-400 ring-4 ring-orange-100' : 'border-slate-100'}`}><div className="absolute top-5 right-5 flex gap-2">{m.senderUsername === currentUser.username && (<button onClick={() => startEditMessage(m)} className="text-sky-400 hover:text-sky-600 bg-sky-50 p-2 rounded-lg transition"><i data-lucide="pencil" width="14"></i></button>)}{(isAdmin || isPanitia || m.senderUsername === currentUser.username) && (<button onClick={() => deleteFromCloud(`messages/${m.id}`)} className="text-rose-400 hover:text-rose-600 bg-rose-50 p-2 rounded-lg transition"><i data-lucide="trash-2" width="14"></i></button>)}</div><div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-300 to-orange-400 flex items-center justify-center text-white font-bold text-xs shadow-sm">{m.sender.charAt(0)}</div><div><p className="font-bold text-slate-800 text-sm">{m.sender}</p><p className="text-[10px] font-bold text-slate-400 uppercase">{m.role} • {m.timestamp}</p></div></div><div className="bg-slate-50 p-3 rounded-2xl rounded-tl-none mt-1 border border-slate-100"><p className="text-slate-600 text-sm leading-relaxed">"{m.text}"</p></div></div>))}{messages.length === 0 && (<div className="text-center py-10 opacity-50"><i data-lucide="message-square-dashed" className="mx-auto mb-2 w-12 h-12 text-slate-300"></i><p className="text-slate-400 font-bold text-sm">Belum ada pesan nih.</p></div>)}</div></div></div>);
